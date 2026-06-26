@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-label="Grove">
+  <rect width="512" height="512" rx="112" fill="#e8efe4" />
+  <rect x="244" y="250" width="24" height="150" rx="12" fill="#2a3f30" />
+  <circle cx="256" cy="206" r="86" fill="#4a6b54" />
+  <circle cx="190" cy="252" r="58" fill="#4a6b54" />
+  <circle cx="322" cy="252" r="58" fill="#4a6b54" />
+  <circle cx="256" cy="262" r="66" fill="#7d9a82" opacity="0.55" />
+</svg>

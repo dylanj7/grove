@@ -9,19 +9,17 @@ export default async function LoginPage({
   const { error } = await searchParams;
 
   return (
-    <main className="flex flex-1 items-center justify-center px-6 py-16">
+    <main className="flex flex-1 items-center justify-center px-6 py-16 pt-safe">
       <div className="w-full max-w-sm">
-        <div className="mb-8 text-center">
-          <h1 className="text-2xl font-semibold tracking-tight text-green-950">
-            Grove
-          </h1>
-          <p className="mt-2 text-sm text-green-800/70">
-            Sign in with your email to continue.
+        <div className="mb-10 text-center">
+          <h1 className="font-voice text-4xl text-soil">Grove</h1>
+          <p className="mt-3 text-sm leading-6 text-canopy">
+            A place you enter, not a screen you check.
           </p>
         </div>
 
         {error && (
-          <p className="mb-4 rounded-lg bg-red-50 px-4 py-3 text-sm text-red-700">
+          <p className="mb-4 rounded-xl bg-red-50 px-4 py-3 text-sm text-red-700">
             {error}
           </p>
         )}

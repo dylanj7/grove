@@ -1,20 +1,100 @@
 @import "tailwindcss";
 
 :root {
-  /* Calm, pale-green off-white. */
-  --background: #f6f8f4;
-  --foreground: #14271b;
+  --background: #f6f8f4; /* mist — the open ground */
+  --foreground: #14271b; /* soil — the deepest text */
 }
 
 @theme inline {
+  /* Daylight ramp — the only colors in Grove. */
+  --color-mist: #f6f8f4; /* page background, the open ground */
+  --color-dawn: #e8efe4; /* raised surfaces, faintest lift off the floor */
+  --color-sage: #c5d3bd; /* hairlines, dividers, quiet borders */
+  --color-canopy: #7d9a82; /* secondary labels, signposts, muted text */
+  --color-moss: #4a6b54; /* primary interactive, active states */
+  --color-pine: #2a3f30; /* strong text, headings where weight is wanted */
+  --color-soil: #14271b; /* deepest text, the serif voice at full contrast */
+
   --color-background: var(--background);
   --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
+
+  /* Two voices, never mixed. */
+  --font-sans: var(--font-geist-sans); /* label — how you move through Grove */
+  --font-voice: var(--font-fraunces); /* voice — what Grove says to you */
+}
+
+html {
+  -webkit-text-size-adjust: 100%;
 }
 
 body {
   background: var(--background);
   color: var(--foreground);
   font-family: var(--font-sans), system-ui, sans-serif;
+  /* No rubber-band overscroll glow — this is an app, not a page. */
+  overscroll-behavior-y: none;
+}
+
+/* ---- safe-area helpers ---- */
+.pt-safe {
+  padding-top: env(safe-area-inset-top);
+}
+.pb-safe {
+  padding-bottom: env(safe-area-inset-bottom);
+}
+
+/* ---- motion: things settle, nothing announces itself ---- */
+
+/* Content rises ~8px into place on each screen entrance. */
+@keyframes grove-rise {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+.grove-rise {
+  animation: grove-rise 520ms cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+/* The one living thing: the tree breathes (~9s) and its canopy sways (~12s),
+   out of phase so it never reads as a loop. Applied to separate nested
+   elements so the scale and rotation don't fight over `transform`. */
+@keyframes grove-breathe {
+  0%,
+  100% {
+    transform: scale(1);
+  }
+  50% {
+    transform: scale(1.018);
+  }
+}
+@keyframes grove-sway {
+  0%,
+  100% {
+    transform: rotate(-0.6deg);
+  }
+  50% {
+    transform: rotate(0.6deg);
+  }
+}
+.grove-breathe {
+  transform-origin: 50% 92%;
+  animation: grove-breathe 9s ease-in-out infinite;
+}
+.grove-sway {
+  transform-origin: 50% 78%;
+  animation: grove-sway 12s ease-in-out infinite;
+}
+
+/* Accessibility floor: no ambient motion, no entrance rise. */
+@media (prefers-reduced-motion: reduce) {
+  .grove-rise,
+  .grove-breathe,
+  .grove-sway {
+    animation: none !important;
+  }
 }

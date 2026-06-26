@@ -34,11 +34,11 @@ export default function LoginForm() {
   if (status === "sent") {
     return (
       <div className="text-center">
-        <h2 className="text-lg font-medium text-green-900">Check your email</h2>
-        <p className="mt-2 text-sm leading-6 text-green-800/70">
-          We sent a magic link to{" "}
-          <span className="font-medium text-green-900">{email}</span>. Click it
-          to sign in — you can close this tab.
+        <h2 className="font-voice text-2xl text-soil">Check your email</h2>
+        <p className="mt-3 text-sm leading-6 text-canopy">
+          A magic link is on its way to{" "}
+          <span className="text-pine">{email}</span>. Open it to step in — you
+          can close this tab.
         </p>
       </div>
     );
@@ -46,7 +46,10 @@ export default function LoginForm() {
 
   return (
     <form onSubmit={handleSubmit} className="flex flex-col gap-4">
-      <label htmlFor="email" className="text-sm font-medium text-green-900">
+      <label
+        htmlFor="email"
+        className="text-[0.7rem] font-medium uppercase tracking-[0.16em] text-canopy"
+      >
         Email
       </label>
       <input
@@ -58,7 +61,7 @@ export default function LoginForm() {
         value={email}
         onChange={(event) => setEmail(event.target.value)}
         placeholder="you@example.com"
-        className="rounded-lg border border-green-900/15 bg-white px-4 py-2.5 text-green-950 shadow-sm outline-none transition focus:border-green-700/40 focus:ring-2 focus:ring-green-700/20"
+        className="rounded-xl border border-sage bg-dawn px-4 py-3 text-soil outline-none transition placeholder:text-canopy/70 focus-visible:border-moss focus-visible:ring-2 focus-visible:ring-moss/25"
       />
 
       {error && <p className="text-sm text-red-700">{error}</p>}
@@ -66,7 +69,7 @@ export default function LoginForm() {
       <button
         type="submit"
         disabled={status === "sending"}
-        className="mt-1 rounded-lg bg-green-800 px-4 py-2.5 font-medium text-white shadow-sm transition hover:bg-green-900 disabled:cursor-not-allowed disabled:opacity-60"
+        className="mt-1 min-h-[44px] rounded-xl bg-moss px-4 py-3 text-sm font-medium uppercase tracking-[0.12em] text-mist transition-colors hover:bg-pine focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-moss/40 disabled:opacity-60"
       >
         {status === "sending" ? "Sending…" : "Send magic link"}
       </button>
