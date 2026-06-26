@@ -124,7 +124,7 @@ const goals = [
     title: "Ship Grove Phase 1",
     aspect: "work",
     horizon: "short",
-    kind: "milestone",
+    kind: "goal",
     cadence: null,
     progress: 35,
     status: "active",

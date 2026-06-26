@@ -37,7 +37,7 @@ export type Goal = {
   title: string;
   aspect: "physical" | "mental" | "work";
   horizon: "short" | "long";
-  kind: "habit" | "milestone";
+  kind: "habit" | "goal";
   cadence: "daily" | "weekly" | null;
   progress: number | null;
   status: string;
@@ -174,7 +174,7 @@ export function detectPatterns(
       }
     }
 
-    if (g.kind === "milestone" && g.horizon === "short" && days.size === 0) {
+    if (g.kind === "goal" && g.horizon === "short" && days.size === 0) {
       out.push({
         code: "milestone_stalled",
         statement: `No progress logged on "${g.title}" in the last two weeks.`,

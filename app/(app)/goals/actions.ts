@@ -3,7 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
 import { isValidDay } from "@/lib/date";
-import { toDbKind, isDomain, type UiKind, type Domain } from "@/lib/goal-kind";
+import { isDomain, type UiKind, type Domain } from "@/lib/goal-kind";
 
 export type ActionResult = { ok: true } | { ok: false; error: string };
 
@@ -33,7 +33,7 @@ export async function createGoal(input: {
     user_id: user.id,
     title,
     aspect: input.domain,
-    kind: toDbKind(input.kind),
+    kind: input.kind,
     horizon: isHabit ? "long" : input.horizon ?? "long",
     cadence: isHabit ? "daily" : null,
     progress: null,
