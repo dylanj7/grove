@@ -83,7 +83,7 @@ export default function NoteField({
           onChange={(e) => onChange(e.target.value)}
           rows={rows}
           placeholder={placeholder}
-          className="w-full resize-none rounded-xl border border-sage bg-dawn py-3 pl-4 pr-16 text-soil outline-none transition placeholder:text-canopy/70 focus-visible:border-moss focus-visible:ring-2 focus-visible:ring-moss/25"
+          className="w-full resize-none rounded-xl border border-sage bg-dawn py-3 pl-4 pr-12 text-soil outline-none transition placeholder:text-canopy/70 focus-visible:border-moss focus-visible:ring-2 focus-visible:ring-moss/25"
         />
         {supported ? (
           <button
@@ -91,13 +91,11 @@ export default function NoteField({
             onClick={toggle}
             aria-pressed={listening}
             aria-label={listening ? "Stop dictation" : "Dictate a note"}
-            className={`absolute bottom-2.5 right-2.5 flex h-11 w-11 items-center justify-center rounded-full transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-moss/40 ${
-              listening
-                ? "grove-pulse bg-moss text-mist"
-                : "bg-mist text-canopy ring-1 ring-sage hover:text-moss"
+            className={`absolute bottom-1 right-1 flex h-11 w-11 items-center justify-center rounded-lg transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-moss/40 ${
+              listening ? "grove-pulse text-moss" : "text-canopy/70 hover:text-moss"
             }`}
           >
-            <Mic size={18} />
+            <Mic size={20} aria-hidden />
           </button>
         ) : null}
       </div>
