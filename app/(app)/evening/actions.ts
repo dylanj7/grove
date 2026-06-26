@@ -2,7 +2,6 @@
 
 import { createClient } from "@/lib/supabase/server";
 import { isValidDay } from "@/lib/date";
-import { invalidateTodayBriefs } from "@/lib/brief-cache";
 
 export type CheckinValues = {
   mood: number;
@@ -69,7 +68,7 @@ export async function saveCheckin(
     };
   }
 
-  // A fresh check-in must be visible to the next brief — clear today's cache.
-  await invalidateTodayBriefs(supabase, user.id);
+  // The next brief read detects the changed check-in via its input signature
+  // and regenerates lazily — no eager invalidation here.
   return { ok: true };
 }

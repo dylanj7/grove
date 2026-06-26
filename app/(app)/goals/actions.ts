@@ -3,7 +3,6 @@
 import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
 import { isValidDay } from "@/lib/date";
-import { invalidateTodayBriefs } from "@/lib/brief-cache";
 import { isDomain, type UiKind, type Domain } from "@/lib/goal-kind";
 
 export type ActionResult = { ok: true } | { ok: false; error: string };
@@ -83,7 +82,6 @@ export async function tendGoal(input: {
     return { ok: false, error: "Couldn't set this down just now. Your words are safe — try again." };
   }
 
-  await invalidateTodayBriefs(supabase, user.id);
   revalidatePath(`/goals/${input.goalId}`);
   revalidatePath("/goals");
   return { ok: true };
@@ -132,7 +130,6 @@ export async function completeHabit(input: {
     if (error) return { ok: false, error: "Couldn't mark it just now. Try again." };
   }
 
-  await invalidateTodayBriefs(supabase, user.id);
   revalidatePath("/goals");
   revalidatePath(`/goals/${input.goalId}`);
   return { ok: true };
@@ -160,7 +157,6 @@ export async function uncompleteHabit(input: {
     .eq("day", input.day);
   if (error) return { ok: false, error: "Couldn't update it just now. Try again." };
 
-  await invalidateTodayBriefs(supabase, user.id);
   revalidatePath("/goals");
   revalidatePath(`/goals/${input.goalId}`);
   return { ok: true };
