@@ -3,12 +3,10 @@ import { notFound } from "next/navigation";
 import { ArrowLeft } from "lucide-react";
 import { createClient } from "@/lib/supabase/server";
 import { Screen, Eyebrow, Voice } from "@/components/ui";
+import { toUiKind, DOMAIN_LABEL, type Domain } from "@/lib/goal-kind";
+import TendControl from "./tend-control";
 
-const ASPECT_LABEL: Record<string, string> = {
-  physical: "Body",
-  mental: "Mind",
-  work: "Work",
-};
+type Touch = { day: string; note: string | null };
 
 function formatDay(day: string): string {
   return new Date(`${day}T00:00:00`).toLocaleDateString("en-US", {
@@ -18,8 +16,25 @@ function formatDay(day: string): string {
   });
 }
 
-// A single intention, given room. Its history of touches is a calm record —
-// not a progress bar racing to 100%.
+function TouchRow({ touch }: { touch: Touch }) {
+  return (
+    <li className="flex gap-4 py-3">
+      <span aria-hidden className="mt-2 h-1.5 w-1.5 shrink-0 rounded-full bg-moss" />
+      <div className="space-y-1">
+        <span className="text-[0.95rem] text-pine">{formatDay(touch.day)}</span>
+        {touch.note?.trim() ? (
+          <p className="font-voice text-[1rem] leading-snug text-soil">
+            &ldquo;{touch.note.trim()}&rdquo;
+          </p>
+        ) : null}
+      </div>
+    </li>
+  );
+}
+
+// A single intention, given room — kind-aware. A goal's touches read as a
+// timeline toward its horizon; a habit's read as an honest record of when it
+// was tended: uncounted, no chain, no streak.
 export default async function GoalDetailPage({
   params,
 }: {
@@ -40,15 +55,34 @@ export default async function GoalDetailPage({
 
   if (!goal) notFound();
 
-  const { data: touches } = await supabase
+  const { data: touchData } = await supabase
     .from("goal_touches")
-    .select("day")
+    .select("day, note")
     .eq("user_id", user!.id)
     .eq("goal_id", id)
     .order("day", { ascending: false });
 
-  const list = touches ?? [];
-  const horizon = goal.horizon === "short" ? "Short horizon" : "Long horizon";
+  const kind = toUiKind(goal.kind);
+  const allTouches = (touchData ?? []) as Touch[];
+
+  // Goal: every progress moment, in order. Habit: the days tended, deduped to a
+  // record of *when* — never a count.
+  let touches = allTouches;
+  if (kind === "habit") {
+    const seen = new Set<string>();
+    touches = allTouches.filter((t) => {
+      if (seen.has(t.day)) return false;
+      seen.add(t.day);
+      return true;
+    });
+  }
+
+  const horizonLabel =
+    kind === "goal"
+      ? goal.horizon === "short"
+        ? "Short horizon"
+        : "Long horizon"
+      : undefined;
 
   return (
     <Screen>
@@ -62,30 +96,28 @@ export default async function GoalDetailPage({
 
       <div className="mt-4">
         <Eyebrow
-          primary={ASPECT_LABEL[goal.aspect] ?? goal.aspect}
-          secondary={horizon}
+          primary={DOMAIN_LABEL[goal.aspect as Domain] ?? goal.aspect}
+          secondary={horizonLabel ?? (kind === "habit" ? "Habit" : undefined)}
         />
         <h1 className="mt-3 text-2xl leading-snug text-pine">{goal.title}</h1>
       </div>
 
+      <div className="mt-10">
+        <TendControl goalId={goal.id} kind={kind} />
+      </div>
+
       <div className="mt-12">
         <Eyebrow primary="Tended" />
-        {list.length === 0 ? (
+        {touches.length === 0 ? (
           <Voice className="mt-6 text-left text-[1.05rem] text-pine">
-            No moments logged yet. This is where its history will gather.
+            {kind === "habit"
+              ? "Not yet tended. The rhythm begins the first time you do."
+              : "No moments logged yet. This is where its history will gather."}
           </Voice>
         ) : (
-          <ul className="mt-5 space-y-0">
-            {list.map((t, i) => (
-              <li key={`${t.day}-${i}`} className="flex items-center gap-4 py-3">
-                <span
-                  aria-hidden
-                  className="h-1.5 w-1.5 shrink-0 rounded-full bg-moss"
-                />
-                <span className="text-[0.95rem] text-pine">
-                  {formatDay(t.day)}
-                </span>
-              </li>
+          <ul className="mt-5">
+            {touches.map((t, i) => (
+              <TouchRow key={`${t.day}-${i}`} touch={t} />
             ))}
           </ul>
         )}

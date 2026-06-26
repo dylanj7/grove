@@ -1,19 +1,46 @@
 "use server";
 
 import { createClient } from "@/lib/supabase/server";
-import { todayISO } from "@/lib/date";
+import { isValidDay } from "@/lib/date";
 
-export type SaveResult = { ok: true } | { ok: false; error: string };
-
-// The one write in Phase 2. Upserts today's check-in on (user_id, day), so
-// re-entering edits today's rather than duplicating. The day is computed
-// server-side, not trusted from the client.
-export async function saveCheckin(input: {
+export type CheckinValues = {
   mood: number;
   energy: number;
   focus: number;
-  note: string | null;
-}): Promise<SaveResult> {
+  note_text: string | null;
+};
+
+export type SaveResult = { ok: true } | { ok: false; error: string };
+
+// Read today's check-in (by the user's local day) so the screen knows whether
+// to invite or to show what's recorded.
+export async function getCheckin(day: string): Promise<CheckinValues | null> {
+  if (!isValidDay(day)) return null;
+  const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) return null;
+
+  const { data } = await supabase
+    .from("checkins")
+    .select("mood, energy, focus, note_text")
+    .eq("user_id", user.id)
+    .eq("day", day)
+    .maybeSingle();
+
+  return data ?? null;
+}
+
+// The single write path. Upserts on (user_id, day) so re-entering the same day
+// edits rather than duplicates. The day is the user's local date.
+export async function saveCheckin(
+  day: string,
+  input: CheckinValues,
+): Promise<SaveResult> {
+  if (!isValidDay(day)) {
+    return { ok: false, error: "Something's off with today's date. Try again." };
+  }
   const supabase = await createClient();
   const {
     data: { user },
@@ -25,11 +52,11 @@ export async function saveCheckin(input: {
   const { error } = await supabase.from("checkins").upsert(
     {
       user_id: user.id,
-      day: todayISO(),
+      day,
       mood: input.mood,
       energy: input.energy,
       focus: input.focus,
-      note_text: input.note,
+      note_text: input.note_text,
     },
     { onConflict: "user_id,day" },
   );

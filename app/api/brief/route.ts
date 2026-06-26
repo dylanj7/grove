@@ -101,7 +101,7 @@ export async function GET(request: Request) {
         slot === "morning"
           ? "A fresh day. Tend what matters."
           : "Day's done. Log how it felt.",
-      body: "Couldn't read the data just now. Nothing's lost — try again in a moment.",
+      body: "Couldn't read the grove just now. Nothing's lost — try again in a moment.",
       moves: [],
       evidence: [],
       cached: false,

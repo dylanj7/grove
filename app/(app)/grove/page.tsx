@@ -5,50 +5,73 @@ import { Tree } from "@/components/tree";
 import { currentSlot } from "@/lib/slot";
 
 // The grove — the calm center. You enter and the tree is breathing in open
-// space: the day above, one carved line below, one quiet action.
+// space: the day above, one carved line below, one quiet action. The line and
+// the tree's fullness reflect how far along the grove is — quiet, tended, or
+// alive with a brief — never a metric.
 export default async function GrovePage() {
   const supabase = await createClient();
   const {
     data: { user },
   } = await supabase.auth.getUser();
+  const uid = user!.id;
 
-  // The single most recent brief headline, read directly (we don't generate a
-  // brief just by coming home — that's what /today is for).
-  const { data: latestBrief } = await supabase
-    .from("briefs")
-    .select("headline")
-    .eq("user_id", user!.id)
-    .order("created_at", { ascending: false })
-    .limit(1)
-    .maybeSingle();
+  const [{ data: latestBrief }, { data: latestCheckin }] = await Promise.all([
+    supabase
+      .from("briefs")
+      .select("headline")
+      .eq("user_id", uid)
+      .order("created_at", { ascending: false })
+      .limit(1)
+      .maybeSingle(),
+    supabase
+      .from("checkins")
+      .select("day")
+      .eq("user_id", uid)
+      .order("day", { ascending: false })
+      .limit(1)
+      .maybeSingle(),
+  ]);
 
   const hasBrief = Boolean(latestBrief?.headline);
+  const hasCheckin = Boolean(latestCheckin);
 
   const now = new Date();
   const weekday = now.toLocaleDateString("en-US", { weekday: "long" });
   const slot = currentSlot(now);
 
-  // treeState is a constant placeholder this phase: a sapling until the grove
-  // has its first brief, fuller once it's alive.
-  const fullness = hasBrief ? 0.82 : 0.12;
+  // Three honest tiers — fullness is a constant per tier this phase (the seam
+  // is the prop, not the value).
+  let fullness: number;
+  let line: string;
+  let action: { href: string; text: string };
+  let treeLabel: string;
 
-  const line = hasBrief
-    ? latestBrief!.headline
-    : "Your grove is young. Tend it this evening.";
-  const action = hasBrief
-    ? { href: "/today", text: "Read today's brief" }
-    : { href: "/evening", text: "Begin this evening" };
+  if (hasBrief) {
+    fullness = 0.82;
+    line = latestBrief!.headline;
+    action = { href: "/today", text: "Read today's brief" };
+    treeLabel = "Your grove";
+  } else if (hasCheckin) {
+    fullness = 0.42;
+    line = "The day is tended. Tomorrow's grove will have something to say.";
+    action = { href: "/today", text: "Read today's brief" };
+    treeLabel = "Your grove, taking root";
+  } else {
+    fullness = 0.12;
+    line = "The grove is quiet. Tend it this evening.";
+    action = { href: "/evening", text: "Begin this evening" };
+    treeLabel = "Your grove, still a sapling";
+  }
 
   return (
     <Screen className="flex min-h-[82dvh] flex-col items-center">
-      <Eyebrow primary={weekday} secondary={slot === "morning" ? "Morning" : "Evening"} />
+      <Eyebrow
+        primary={weekday}
+        secondary={slot === "morning" ? "Morning" : "Evening"}
+      />
 
       <div className="flex flex-1 flex-col items-center justify-center gap-9 py-10">
-        <Tree
-          treeState={{ fullness }}
-          className="h-60 w-auto"
-          label={hasBrief ? "Your grove" : "Your grove, still a sapling"}
-        />
+        <Tree treeState={{ fullness }} className="h-60 w-auto" label={treeLabel} />
         <Voice className="max-w-[18rem] text-[1.35rem]">{line}</Voice>
       </div>
 

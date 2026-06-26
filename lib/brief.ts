@@ -73,8 +73,11 @@ Write the ${slot} brief as JSON.`;
     // Never crash the morning on a parse error — degrade to a calm brief.
     return {
       brief: {
-        headline: slot === "morning" ? "A fresh day. Tend what matters." : "Day's done. Log how it felt.",
-        body: "Not enough signal to read a pattern today. Keep feeding the system and it gets sharper.",
+        headline:
+          slot === "morning"
+            ? "A fresh day. Tend what matters."
+            : "Day's done. Set down how it felt.",
+        body: "There's nothing to read into yet. Tend a check-in tonight and tomorrow's grove will have something to say.",
         moves: [],
       },
       evidence: patterns,

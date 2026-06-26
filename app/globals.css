@@ -90,11 +90,27 @@ body {
   animation: grove-sway 12s ease-in-out infinite;
 }
 
+/* The mic's listening state — a quiet pulse, not a loud "RECORDING" banner.
+   This is active feedback during a deliberate action, not ambient motion. */
+@keyframes grove-pulse {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.45;
+  }
+}
+.grove-pulse {
+  animation: grove-pulse 1.6s ease-in-out infinite;
+}
+
 /* Accessibility floor: no ambient motion, no entrance rise. */
 @media (prefers-reduced-motion: reduce) {
   .grove-rise,
   .grove-breathe,
-  .grove-sway {
+  .grove-sway,
+  .grove-pulse {
     animation: none !important;
   }
 }
