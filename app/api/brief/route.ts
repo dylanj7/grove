@@ -49,6 +49,8 @@ export async function GET(request: Request) {
     .eq("user_id", user.id)
     .eq("day", day)
     .eq("slot", slot)
+    .order("created_at", { ascending: false })
+    .limit(1)
     .maybeSingle();
 
   if (existing) {

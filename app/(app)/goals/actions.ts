@@ -3,6 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
 import { isValidDay } from "@/lib/date";
+import { invalidateTodayBriefs } from "@/lib/brief-cache";
 import { isDomain, type UiKind, type Domain } from "@/lib/goal-kind";
 
 export type ActionResult = { ok: true } | { ok: false; error: string };
@@ -82,7 +83,85 @@ export async function tendGoal(input: {
     return { ok: false, error: "Couldn't set this down just now. Your words are safe — try again." };
   }
 
+  await invalidateTodayBriefs(supabase, user.id);
   revalidatePath(`/goals/${input.goalId}`);
   revalidatePath("/goals");
+  return { ok: true };
+}
+
+// Complete a habit for today — one tap from the list. Idempotent per local day:
+// one tended record per (goal, day). The "reset" is free — tomorrow no row
+// exists for the new day, so it's simply un-done. No streak, no count, ever.
+export async function completeHabit(input: {
+  goalId: string;
+  day: string;
+}): Promise<ActionResult> {
+  if (!isValidDay(input.day)) {
+    return { ok: false, error: "Something's off with today's date. Try again." };
+  }
+  const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) return { ok: false, error: "You've been signed out. Sign in and try again." };
+
+  const { data: goal } = await supabase
+    .from("goals")
+    .select("id")
+    .eq("id", input.goalId)
+    .eq("user_id", user.id)
+    .maybeSingle();
+  if (!goal) return { ok: false, error: "That habit couldn't be found." };
+
+  // Insert only if today isn't already recorded (no note — completion is bare).
+  const { data: already } = await supabase
+    .from("goal_touches")
+    .select("goal_id")
+    .eq("user_id", user.id)
+    .eq("goal_id", input.goalId)
+    .eq("day", input.day)
+    .limit(1)
+    .maybeSingle();
+
+  if (!already) {
+    const { error } = await supabase.from("goal_touches").insert({
+      user_id: user.id,
+      goal_id: input.goalId,
+      day: input.day,
+    });
+    if (error) return { ok: false, error: "Couldn't mark it just now. Try again." };
+  }
+
+  await invalidateTodayBriefs(supabase, user.id);
+  revalidatePath("/goals");
+  revalidatePath(`/goals/${input.goalId}`);
+  return { ok: true };
+}
+
+// Un-complete a habit for today — delete today's tended record.
+export async function uncompleteHabit(input: {
+  goalId: string;
+  day: string;
+}): Promise<ActionResult> {
+  if (!isValidDay(input.day)) {
+    return { ok: false, error: "Something's off with today's date. Try again." };
+  }
+  const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) return { ok: false, error: "You've been signed out. Sign in and try again." };
+
+  const { error } = await supabase
+    .from("goal_touches")
+    .delete()
+    .eq("user_id", user.id)
+    .eq("goal_id", input.goalId)
+    .eq("day", input.day);
+  if (error) return { ok: false, error: "Couldn't update it just now. Try again." };
+
+  await invalidateTodayBriefs(supabase, user.id);
+  revalidatePath("/goals");
+  revalidatePath(`/goals/${input.goalId}`);
   return { ok: true };
 }

@@ -147,6 +147,32 @@ export function detectPatterns(
     }
   }
 
+  // ===== MENTAL: the most recent check-in, in words =====
+  // A single check-in is real material for the brief — even with no Fitbit data
+  // and no multi-day trend yet. Translate the stored 1–5 to a felt word so the
+  // brief can speak to it honestly; the number is never surfaced.
+  const latestCheckin = checkins.find(
+    (c) => c.mood != null || c.energy != null || c.focus != null,
+  );
+  if (latestCheckin) {
+    const MOOD = ["", "heavy", "low", "even", "light", "bright"];
+    const ENERGY = ["", "drained", "low", "steady", "full", "brimming"];
+    const FOCUS = ["", "scattered", "foggy", "okay", "clear", "sharp"];
+    const parts: string[] = [];
+    if (latestCheckin.mood != null) parts.push(`mood ${MOOD[latestCheckin.mood] ?? "even"}`);
+    if (latestCheckin.energy != null) parts.push(`energy ${ENERGY[latestCheckin.energy] ?? "steady"}`);
+    if (latestCheckin.focus != null) parts.push(`focus ${FOCUS[latestCheckin.focus] ?? "okay"}`);
+    let statement = `Most recent check-in — ${parts.join(", ")}.`;
+    const note = latestCheckin.note_text?.trim();
+    if (note) statement += ` In their words: "${note.slice(0, 240)}".`;
+    out.push({
+      code: "checkin_state",
+      statement,
+      pillars: ["mental"],
+      strength: "moderate",
+    });
+  }
+
   // ===== GOALS: neglected habits & stalled milestones =====
   const touchDays = new Map<string, Set<string>>();
   for (const t of touches) {

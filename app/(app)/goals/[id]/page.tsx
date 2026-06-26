@@ -102,16 +102,20 @@ export default async function GoalDetailPage({
         <h1 className="mt-3 text-2xl leading-snug text-pine">{goal.title}</h1>
       </div>
 
-      <div className="mt-10">
-        <TendControl goalId={goal.id} kind={kind} />
-      </div>
+      {/* A goal is tended here; a habit is completed from the list, so its
+          detail is the record only. */}
+      {kind === "goal" ? (
+        <div className="mt-10">
+          <TendControl goalId={goal.id} kind={kind} />
+        </div>
+      ) : null}
 
       <div className="mt-12">
         <Eyebrow primary="Tended" />
         {touches.length === 0 ? (
           <Voice className="mt-6 text-left text-[1.05rem] text-pine">
             {kind === "habit"
-              ? "Not yet tended. The rhythm begins the first time you do."
+              ? "Not yet tended. Check it off in your list to begin the rhythm."
               : "No moments logged yet. This is where its history will gather."}
           </Voice>
         ) : (
