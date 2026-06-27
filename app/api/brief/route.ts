@@ -133,17 +133,26 @@ export async function GET(request: Request) {
       windowSummary: summary,
     });
 
+    // UPSERT, not insert. briefs has a unique constraint on (user_id, day, slot)
+    // — one brief per slot per day. A plain insert succeeds the first time and
+    // then fails the duplicate-key check on every regeneration, so a changed
+    // signature could never overwrite the stored brief and the slot was stuck
+    // regenerating forever. Upserting lets a real input change persist its new
+    // brief once, after which the signature matches and it freezes again.
     const storedEvidence: StoredEvidence = { patterns: evidence, sig: signature };
-    const { error: insertError } = await supabase.from("briefs").insert({
-      user_id: user.id,
-      day,
-      slot,
-      headline: brief.headline,
-      body: brief.body,
-      moves: brief.moves,
-      evidence: storedEvidence,
-    });
-    if (insertError) console.error("brief insert failed:", insertError.message);
+    const { error: upsertError } = await supabase.from("briefs").upsert(
+      {
+        user_id: user.id,
+        day,
+        slot,
+        headline: brief.headline,
+        body: brief.body,
+        moves: brief.moves,
+        evidence: storedEvidence,
+      },
+      { onConflict: "user_id,day,slot" },
+    );
+    if (upsertError) console.error("brief upsert failed:", upsertError.message);
 
     return NextResponse.json({
       headline: brief.headline,
