@@ -27,6 +27,7 @@ export type PhysicalDay = {
 
 export type Checkin = {
   day: string;
+  slot: "morning" | "evening";
   mood: number | null;
   energy: number | null;
   focus: number | null;
@@ -65,6 +66,21 @@ function streak<T>(rows: T[], pred: (r: T) => boolean): number {
     else break;
   }
   return n;
+}
+
+// There can now be two check-ins on one day (morning + evening). The day-trend
+// detectors must reason in DAYS, not rows, or "low focus 3 days running" would
+// silently mean three rows = a day and a half. Collapse to one row per day,
+// keeping the day's latest (input is newest-first, so the first seen per day).
+function latestPerDay(checkins: Checkin[]): Checkin[] {
+  const seen = new Set<string>();
+  const out: Checkin[] = [];
+  for (const c of checkins) {
+    if (seen.has(c.day)) continue;
+    seen.add(c.day);
+    out.push(c);
+  }
+  return out;
 }
 
 // ----------------------------------------------------------------
@@ -122,8 +138,11 @@ export function detectPatterns(
     }
   }
 
+  // One representative check-in per day for the day-trend detectors.
+  const dayCheckins = latestPerDay(checkins);
+
   // ===== MENTAL: scattered focus =====
-  const focusRows = checkins.filter((c) => c.focus != null);
+  const focusRows = dayCheckins.filter((c) => c.focus != null);
   if (focusRows.length >= 3) {
     const s = streak(focusRows, (c) => (c.focus ?? 5) <= 2);
     if (s >= 2) {
@@ -137,7 +156,7 @@ export function detectPatterns(
   }
 
   // ===== MENTAL: low energy =====
-  const energyRows = checkins.filter((c) => c.energy != null);
+  const energyRows = dayCheckins.filter((c) => c.energy != null);
   if (energyRows.length >= 3) {
     const s = streak(energyRows, (c) => (c.energy ?? 5) <= 2);
     if (s >= 2) {
@@ -184,7 +203,14 @@ export function detectPatterns(
   }
   const windowDays = physical.map((d) => d.day); // newest-first calendar of the window
 
-  for (const g of goals.filter((x) => x.status === "active")) {
+  // Sorted so the goal-derived patterns are pushed in a stable order — the
+  // patterns array is fingerprinted into the brief signature, so its order must
+  // not depend on however the rows happened to arrive.
+  const activeGoals = goals
+    .filter((x) => x.status === "active")
+    .sort((a, b) => a.aspect.localeCompare(b.aspect) || a.title.localeCompare(b.title) || a.id.localeCompare(b.id));
+
+  for (const g of activeGoals) {
     const days = touchDays.get(g.id) ?? new Set<string>();
 
     if (g.kind === "habit" && g.cadence === "daily") {
@@ -240,18 +266,33 @@ export function detectPatterns(
   return out;
 }
 
+// Whole days between two YYYY-MM-DD strings (pure: depends only on its args).
+function daysBetween(from: string, to: string): number {
+  const a = Date.parse(`${from}T00:00:00Z`);
+  const b = Date.parse(`${to}T00:00:00Z`);
+  return Math.round((b - a) / 86_400_000);
+}
+
 // ----------------------------------------------------------------
-// A compact, factual snapshot of the window for the model — alongside
-// the verified patterns. Numbers only; no interpretation here.
+// A compact, factual snapshot of the window for the model — alongside the
+// verified patterns. State (body + check-in) AND direction (goals/habits and
+// how they've actually been tended), so the brief can be specific to THIS day
+// instead of a generic mood reflection. Facts only; no interpretation here.
+//
+// Fully deterministic given its inputs — which is what lets the brief freeze:
+// this string is part of the content signature (see app/api/brief/route.ts).
+// `today` is the stable calendar identity of the brief, passed in (never read
+// from the clock here) so the summary is reproducible.
 // ----------------------------------------------------------------
 export function windowSummary(
   physical: PhysicalDay[],
   checkins: Checkin[],
   goals: Goal[],
+  touches: GoalTouch[],
+  today: string,
 ): string {
   const p = physical[0];
   const c = checkins[0];
-  const active = goals.filter((g) => g.status === "active");
 
   // The latest body reading, present metrics only, as plain facts. Listing
   // every metric here is also what folds the reading into the brief's content
@@ -262,6 +303,38 @@ export function windowSummary(
   if (p?.resting_hr != null) body.push(`resting HR ${Math.round(p.resting_hr)}`);
   if (p?.hrv_ms != null) body.push(`HRV ${Math.round(p.hrv_ms)}ms`);
 
+  // Tending history per goal/habit: most-recent touch day + how many distinct
+  // days tended in the window. Computed as the MAX day (not the first row seen)
+  // so the summary doesn't depend on the order touches arrive — it's part of the
+  // brief signature, so it must be a pure function of WHICH touches exist.
+  const lastTouch = new Map<string, string>();
+  const touchedDays = new Map<string, Set<string>>();
+  for (const t of touches) {
+    const cur = lastTouch.get(t.goal_id);
+    if (!cur || t.day > cur) lastTouch.set(t.goal_id, t.day); // YYYY-MM-DD sorts chronologically
+    if (!touchedDays.has(t.goal_id)) touchedDays.set(t.goal_id, new Set());
+    touchedDays.get(t.goal_id)!.add(t.day);
+  }
+
+  const active = goals
+    .filter((g) => g.status === "active")
+    .sort((a, b) => a.aspect.localeCompare(b.aspect) || a.title.localeCompare(b.title) || a.id.localeCompare(b.id));
+
+  const direction = active.map((g) => {
+    const kind = g.kind === "habit" ? "habit" : "goal";
+    const last = lastTouch.get(g.id);
+    const count = touchedDays.get(g.id)?.size ?? 0;
+    let tend: string;
+    if (!last) {
+      tend = "never tended in the last 14 days";
+    } else {
+      const ago = daysBetween(last, today);
+      const when = ago <= 0 ? "today" : ago === 1 ? "yesterday" : `${ago}d ago`;
+      tend = `last tended ${when}, ${count} day${count === 1 ? "" : "s"} in the window`;
+    }
+    return `- "${g.title}" (${kind}, ${g.aspect}): ${tend}`;
+  });
+
   return [
     body.length
       ? `Latest body reading — ${body.join(", ")}.`
@@ -269,7 +342,11 @@ export function windowSummary(
     // Recovery is given as a sense, never a figure — it must not be echoed back
     // to the user as a score to beat.
     `Recovery reads: ${recoveryBand(p?.recovery_score ?? null)}.`,
-    c ? `Latest check-in — mood ${c.mood}/5, energy ${c.energy}/5, focus ${c.focus}/5.` : "No recent check-in.",
-    `Active goals: ${active.map((g) => `${g.title} [${g.aspect}/${g.horizon}]`).join("; ") || "none yet"}.`,
+    c
+      ? `Latest check-in (${c.slot}) — mood ${c.mood}/5, energy ${c.energy}/5, focus ${c.focus}/5.`
+      : "No recent check-in.",
+    direction.length
+      ? `Goals and habits, with how they've been tended:\n${direction.join("\n")}`
+      : "No goals or habits planted yet.",
   ].join("\n");
 }

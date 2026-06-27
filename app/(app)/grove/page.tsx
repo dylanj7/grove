@@ -3,11 +3,13 @@ import { createClient } from "@/lib/supabase/server";
 import { Screen, Eyebrow, Voice } from "@/components/ui";
 import { Tree } from "@/components/tree";
 import { currentSlot } from "@/lib/slot";
+import { todayISO } from "@/lib/date";
 
 // The grove — the calm center. You enter and the tree is breathing in open
 // space: the day above, one carved line below, one quiet action. The line and
 // the tree's fullness reflect how far along the grove is — quiet, tended, or
-// alive with a brief — never a metric.
+// alive with a brief — never a metric. The check-in is the front door: until
+// this slot's check-in is done, the one action is to do it.
 export default async function GrovePage() {
   const supabase = await createClient();
   const {
@@ -15,11 +17,19 @@ export default async function GrovePage() {
   } = await supabase.auth.getUser();
   const uid = user!.id;
 
-  const [{ data: latestBrief }, { data: latestCheckin }] = await Promise.all([
+  const now = new Date();
+  const weekday = now.toLocaleDateString("en-US", { weekday: "long" });
+  const slot = currentSlot(now);
+  const day = todayISO();
+  const isMorning = slot === "morning";
+
+  const [{ data: latestBrief }, { data: slotCheckin }] = await Promise.all([
     supabase
       .from("briefs")
-      .select("headline")
+      .select("headline, day")
       .eq("user_id", uid)
+      .eq("day", day)
+      .eq("slot", slot)
       .order("created_at", { ascending: false })
       .limit(1)
       .maybeSingle(),
@@ -27,17 +37,13 @@ export default async function GrovePage() {
       .from("checkins")
       .select("day")
       .eq("user_id", uid)
-      .order("day", { ascending: false })
-      .limit(1)
+      .eq("day", day)
+      .eq("slot", slot)
       .maybeSingle(),
   ]);
 
+  const slotDone = Boolean(slotCheckin);
   const hasBrief = Boolean(latestBrief?.headline);
-  const hasCheckin = Boolean(latestCheckin);
-
-  const now = new Date();
-  const weekday = now.toLocaleDateString("en-US", { weekday: "long" });
-  const slot = currentSlot(now);
 
   // Three honest tiers — fullness is a constant per tier this phase (the seam
   // is the prop, not the value).
@@ -46,21 +52,28 @@ export default async function GrovePage() {
   let action: { href: string; text: string };
   let treeLabel: string;
 
-  if (hasBrief) {
+  if (!slotDone) {
+    fullness = 0.16;
+    line = isMorning
+      ? "A new day. Begin with how you're heading in."
+      : "The day winds down. Set down how it went.";
+    action = {
+      href: "/checkin",
+      text: isMorning ? "Begin the morning" : "Tend this evening",
+    };
+    treeLabel = "Your grove, still a sapling";
+  } else if (hasBrief) {
     fullness = 0.82;
     line = latestBrief!.headline;
-    action = { href: "/today", text: "Read today's brief" };
+    action = { href: "/today", text: `Read the ${slot} brief` };
     treeLabel = "Your grove";
-  } else if (hasCheckin) {
-    fullness = 0.42;
-    line = "The day is tended. Tomorrow's grove will have something to say.";
-    action = { href: "/today", text: "Read today's brief" };
-    treeLabel = "Your grove, taking root";
   } else {
-    fullness = 0.12;
-    line = "The grove is quiet. Tend it this evening.";
-    action = { href: "/evening", text: "Begin this evening" };
-    treeLabel = "Your grove, still a sapling";
+    fullness = 0.42;
+    line = isMorning
+      ? "The morning is set. Your brief is forming."
+      : "The day is tended. Your brief is forming.";
+    action = { href: "/today", text: `Read the ${slot} brief` };
+    treeLabel = "Your grove, taking root";
   }
 
   return (

@@ -1,17 +1,9 @@
-import { Screen, Eyebrow } from "@/components/ui";
-import BodyForm from "./body-form";
+import { redirect } from "next/navigation";
 
-// The body's half of "how today went". The evening check-in records the mind;
-// this records the body — sleep and heart, by hand. Manual input is first-class
-// and permanent: Grove reads the body honestly with no wearable connected. When
-// Fitbit arrives (Phase 5) it simply becomes another way to fill this in.
-export default function BodyPage() {
-  return (
-    <Screen>
-      <Eyebrow primary="The body" secondary="Today" />
-      <div className="mt-8">
-        <BodyForm />
-      </div>
-    </Screen>
-  );
+// The standalone body screen folded into the morning check-in (Phase 4.5 §1a):
+// sleep + felt state + the day ahead are one morning flow now. The physical
+// reading still lives in the data model and still feeds recovery and the brief —
+// only the input surface moved. Kept as a redirect so old links still land.
+export default function BodyRedirect() {
+  redirect("/checkin");
 }

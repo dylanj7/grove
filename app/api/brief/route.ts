@@ -14,7 +14,7 @@
 import { NextResponse } from "next/server";
 import { createHash } from "node:crypto";
 import { createClient } from "@/lib/supabase/server";
-import { loadWindow } from "@/lib/window";
+import { loadWindow, type WindowData } from "@/lib/window";
 import { detectPatterns, windowSummary, type Pattern } from "@/lib/patterns";
 import { generateBrief } from "@/lib/brief";
 
@@ -27,9 +27,34 @@ function todayISO(): string {
 
 // The "did anything real change?" detector: a fingerprint of exactly what
 // generateBrief consumes. Same inputs → same signature → same brief, untouched.
+// Patterns are sorted by code first so the fingerprint can't depend on the order
+// the detector happened to emit them — only on WHICH patterns are present and
+// what they say. (Belt-and-suspenders with loadWindow's deterministic ordering.)
 function inputSignature(slot: Slot, summary: string, patterns: Pattern[]): string {
-  const canonical = JSON.stringify({ slot, summary, patterns });
+  const sorted = [...patterns].sort((a, b) => a.code.localeCompare(b.code));
+  const canonical = JSON.stringify({ slot, summary, patterns: sorted });
   return createHash("sha256").update(canonical).digest("hex").slice(0, 32);
+}
+
+// The deterministic "what to tend today" reminders — a plain read of the user's
+// current goals and habits, never the model. A deterministic list cannot
+// regenerate differently, so it is frozen by construction (Phase 4.5 §3a).
+function tendList(goals: WindowData["goals"], touches: WindowData["touches"]) {
+  const recentByGoal = new Map<string, string[]>();
+  for (const t of touches) {
+    const arr = recentByGoal.get(t.goal_id) ?? [];
+    arr.push(t.day);
+    recentByGoal.set(t.goal_id, arr);
+  }
+  const active = goals.filter((g) => g.status === "active");
+  return {
+    habits: active
+      .filter((g) => g.kind === "habit")
+      .map((g) => ({ id: g.id, title: g.title, aspect: g.aspect, recentDays: recentByGoal.get(g.id) ?? [] })),
+    goals: active
+      .filter((g) => g.kind === "goal")
+      .map((g) => ({ id: g.id, title: g.title, aspect: g.aspect })),
+  };
 }
 
 // The brief stores its patterns alongside the signature it was generated from.
@@ -71,8 +96,9 @@ export async function GET(request: Request) {
       win.touches,
       win.goals,
     );
-    const summary = windowSummary(win.physical, win.checkins, win.goals);
+    const summary = windowSummary(win.physical, win.checkins, win.goals, win.touches, day);
     const signature = inputSignature(slot, summary, patterns);
+    const tend = tendList(win.goals, win.touches);
 
     // Cache-first: the newest brief for this exact triple.
     const { data: existing } = await supabase
@@ -94,6 +120,7 @@ export async function GET(request: Request) {
           body: existing.body,
           moves: existing.moves ?? [],
           evidence: stored.patterns,
+          tend,
           cached: true,
         });
       }
@@ -123,6 +150,7 @@ export async function GET(request: Request) {
       body: brief.body,
       moves: brief.moves,
       evidence,
+      tend,
       cached: false,
     });
   } catch (err) {
@@ -146,6 +174,7 @@ export async function GET(request: Request) {
         body: fallbackRow.body,
         moves: fallbackRow.moves ?? [],
         evidence: readStored(fallbackRow.evidence).patterns,
+        tend: { habits: [], goals: [] },
         cached: true,
       });
     }
@@ -158,6 +187,7 @@ export async function GET(request: Request) {
       body: "Couldn't read the grove just now. Nothing's lost — try again in a moment.",
       moves: [],
       evidence: [],
+      tend: { habits: [], goals: [] },
       cached: false,
     });
   }

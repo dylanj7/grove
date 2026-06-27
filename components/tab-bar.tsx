@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { Trees, Sun, Moon, Target, User } from "lucide-react";
+import { Trees, Sun, PenLine, Target, User } from "lucide-react";
 import type { ComponentType } from "react";
 
 type Tab = {
@@ -11,12 +11,13 @@ type Tab = {
   Icon: ComponentType<{ size?: number; strokeWidth?: number; className?: string }>;
 };
 
-// Five tabs are the spine. "Evening" earns its own tab — it's the single write
-// path and must be one thumb-tap away. History + settings live under "You".
+// Five tabs are the spine. "Check-in" earns its own tab — it's the single write
+// path (morning and evening now) and must be one thumb-tap away. History +
+// settings live under "You".
 const TABS: Tab[] = [
   { href: "/grove", label: "Grove", Icon: Trees },
   { href: "/today", label: "Today", Icon: Sun },
-  { href: "/evening", label: "Evening", Icon: Moon },
+  { href: "/checkin", label: "Check-in", Icon: PenLine },
   { href: "/goals", label: "Goals", Icon: Target },
   { href: "/history", label: "You", Icon: User },
 ];

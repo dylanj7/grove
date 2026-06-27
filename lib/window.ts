@@ -29,6 +29,11 @@ export async function loadWindow(
   since.setUTCDate(since.getUTCDate() - (days - 1));
   const sinceDay = since.toISOString().slice(0, 10); // YYYY-MM-DD
 
+  // Every query is TOTALLY ordered. Without this, Postgres returns rows in
+  // arbitrary heap order that can flip between requests — and since the brief's
+  // content signature is a fingerprint of these rows, an order flip changes the
+  // signature and regenerates a brief that didn't actually change. Deterministic
+  // order is what lets the brief freeze. (See app/api/brief/route.ts.)
   const [physicalRes, checkinsRes, goalsRes, touchesRes] = await Promise.all([
     supabase
       .from("physical_days")
@@ -38,21 +43,28 @@ export async function loadWindow(
       .order("day", { ascending: false }),
     supabase
       .from("checkins")
-      .select("day, mood, energy, focus, note_text")
+      .select("day, slot, mood, energy, focus, note_text")
       .eq("user_id", userId)
       .gte("day", sinceDay)
-      .order("day", { ascending: false }),
+      // day desc, then slot asc so within a day 'evening' precedes 'morning'
+      // — newest-first, and stable.
+      .order("day", { ascending: false })
+      .order("slot", { ascending: true }),
     supabase
       .from("goals")
       .select("id, title, aspect, horizon, kind, cadence, progress, status")
       .eq("user_id", userId)
-      .eq("status", "active"),
+      .eq("status", "active")
+      .order("aspect", { ascending: true })
+      .order("title", { ascending: true })
+      .order("id", { ascending: true }),
     supabase
       .from("goal_touches")
       .select("goal_id, day")
       .eq("user_id", userId)
       .gte("day", sinceDay)
-      .order("day", { ascending: false }),
+      .order("day", { ascending: false })
+      .order("goal_id", { ascending: true }),
   ]);
 
   for (const res of [physicalRes, checkinsRes, goalsRes, touchesRes]) {
