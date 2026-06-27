@@ -12,9 +12,12 @@
 // All input arrays arrive NEWEST-FIRST (day desc).
 // ----------------------------------------------------------------
 
+import { recoveryBand } from "./recovery";
+
 export type PhysicalDay = {
   day: string;
   sleep_minutes: number | null;
+  sleep_efficiency: number | null; // feeds recovery; carried here so the window summary can read it
   resting_hr: number | null;
   hrv_ms: number | null;
   steps: number | null;
@@ -246,13 +249,26 @@ export function windowSummary(
   checkins: Checkin[],
   goals: Goal[],
 ): string {
-  const lastSleep = physical[0]?.sleep_minutes;
-  const lastReco = physical[0]?.recovery_score;
+  const p = physical[0];
   const c = checkins[0];
   const active = goals.filter((g) => g.status === "active");
+
+  // The latest body reading, present metrics only, as plain facts. Listing
+  // every metric here is also what folds the reading into the brief's content
+  // signature — edit any number and the brief regenerates once, then holds.
+  const body: string[] = [];
+  if (p?.sleep_minutes != null) body.push(`slept ${Math.round((p.sleep_minutes / 60) * 10) / 10}h`);
+  if (p?.sleep_efficiency != null) body.push(`sleep efficiency ${Math.round(p.sleep_efficiency)}%`);
+  if (p?.resting_hr != null) body.push(`resting HR ${Math.round(p.resting_hr)}`);
+  if (p?.hrv_ms != null) body.push(`HRV ${Math.round(p.hrv_ms)}ms`);
+
   return [
-    `Latest sleep: ${lastSleep ? Math.round((lastSleep / 60) * 10) / 10 + "h" : "no data"}.`,
-    `Latest recovery score: ${lastReco ?? "no data"}.`,
+    body.length
+      ? `Latest body reading — ${body.join(", ")}.`
+      : "No physical reading yet — the body is unmeasured.",
+    // Recovery is given as a sense, never a figure — it must not be echoed back
+    // to the user as a score to beat.
+    `Recovery reads: ${recoveryBand(p?.recovery_score ?? null)}.`,
     c ? `Latest check-in — mood ${c.mood}/5, energy ${c.energy}/5, focus ${c.focus}/5.` : "No recent check-in.",
     `Active goals: ${active.map((g) => `${g.title} [${g.aspect}/${g.horizon}]`).join("; ") || "none yet"}.`,
   ].join("\n");

@@ -86,3 +86,17 @@ export function computeRecovery(
   const blended = parts.reduce((s, p) => s + p.score * p.weight, 0) / totalWeight;
   return clamp(Math.round(blended), 0, 100);
 }
+
+/**
+ * Recovery as a felt word, never a number. The score is an internal signal; the
+ * moment it's spoken — to the user or to the brief's model — it becomes a sense,
+ * not a figure to beat or a streak to defend. `null` (too little to read) maps
+ * to its own honest phrase, so the brief can invite a reading rather than guess.
+ */
+export function recoveryBand(score: number | null): string {
+  if (score == null) return "no read yet";
+  if (score >= 80) return "well recovered";
+  if (score >= 65) return "steady";
+  if (score >= 50) return "a little low";
+  return "running low";
+}

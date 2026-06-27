@@ -59,10 +59,7 @@ export async function loadWindow(
     if (res.error) throw new Error(`loadWindow query failed: ${res.error.message}`);
   }
 
-  // physical_days also carries sleep_efficiency (used only by computeRecovery,
-  // not by the pattern detector), so widen the row type for the backfill.
-  type PhysicalRow = PhysicalDay & { sleep_efficiency: number | null };
-  const physical = (physicalRes.data ?? []) as PhysicalRow[];
+  const physical = (physicalRes.data ?? []) as PhysicalDay[];
   const checkins = (checkinsRes.data ?? []) as Checkin[];
   const goals = (goalsRes.data ?? []) as Goal[];
   const touches = (touchesRes.data ?? []) as GoalTouch[];
@@ -80,7 +77,7 @@ export async function loadWindow(
       const score = computeRecovery(
         {
           sleep_minutes: d.sleep_minutes,
-          sleep_efficiency: d.sleep_efficiency ?? null,
+          sleep_efficiency: d.sleep_efficiency,
           resting_hr: d.resting_hr,
           hrv_ms: d.hrv_ms,
         },
