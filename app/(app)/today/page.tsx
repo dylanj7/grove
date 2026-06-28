@@ -48,7 +48,10 @@ export default function TodayPage() {
 
       setState("brief-loading");
       try {
-        const res = await fetch(`/api/brief?slot=${slot}`);
+        // Pass the local day + timezone offset so a connected band's data lands
+        // on the right civil day (the server works in UTC otherwise).
+        const tz = new Date().getTimezoneOffset();
+        const res = await fetch(`/api/brief?slot=${slot}&day=${day}&tz=${tz}`);
         const json = await res.json();
         if (!alive) return;
         setBrief({

@@ -2,17 +2,21 @@
 // ----------------------------------------------------------------
 // The physical reading — the one internal shape every physical signal
 // flows through, whatever its source. Manual input produces one of these;
-// the Fitbit seam (lib/fitbit.ts) will produce the same shape in Phase 5.
-// The recovery calc and the brief read this; neither knows nor cares where
-// the numbers came from. That source-blindness is what makes manual-now /
-// Fitbit-later a swap, not a rebuild.
+// the health seam (lib/health.ts → lib/health-google.ts) produces the band's
+// reading (a superset, with activity) and persists it the same way. The
+// recovery calc and the brief read merged readings; neither knows nor cares
+// where a number came from. That source-blindness is what makes manual + band
+// a merge, not a rebuild.
 //
 // Every metric is INDEPENDENTLY optional. A reading with sleep and resting HR
 // but no HRV and no efficiency is a valid, usable reading — recovery degrades
 // gracefully across whatever is present (see lib/recovery.ts).
 // ----------------------------------------------------------------
 
-export type PhysicalSource = "manual" | "fitbit";
+// 'google_health' is the band (Google Health API — data from a Fitbit/Pixel
+// device). 'fitbit' is kept for the original Phase 4 seam naming; nothing writes
+// it anymore, but old rows or a future direct-Fitbit path would still validate.
+export type PhysicalSource = "manual" | "fitbit" | "google_health";
 
 // The measured metrics, each nullable on its own.
 export type PhysicalMetrics = {

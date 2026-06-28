@@ -20,6 +20,43 @@ export type WindowData = {
 const mean = (xs: number[]): number | null =>
   xs.length ? xs.reduce((a, b) => a + b, 0) / xs.length : null;
 
+// A raw physical_days row carries its provenance; the merged PhysicalDay does
+// not — everything above the merge is source-blind by design.
+type PhysicalRow = PhysicalDay & { source: string };
+
+// Collapse a day's manual + band rows into one reading. Provider wins per metric
+// (a `??` only falls through on null/undefined, so a real 0 from the band still
+// counts); a manual metric the band lacks is kept. recovery_score is taken from
+// whichever row stored one (the band leaves it null), else recomputed below.
+function mergePhysical(rows: PhysicalRow[]): PhysicalDay[] {
+  const byDay = new Map<string, { manual?: PhysicalRow; provider?: PhysicalRow }>();
+  for (const r of rows) {
+    const bucket = byDay.get(r.day) ?? {};
+    if (r.source === "manual") bucket.manual = r;
+    else bucket.provider = r; // google_health (or a legacy 'fitbit' row)
+    byDay.set(r.day, bucket);
+  }
+
+  const merged: PhysicalDay[] = [];
+  for (const { manual, provider } of byDay.values()) {
+    const pref = <K extends keyof PhysicalDay>(k: K): PhysicalDay[K] =>
+      (provider?.[k] ?? manual?.[k] ?? null) as PhysicalDay[K];
+    merged.push({
+      day: (provider ?? manual)!.day,
+      sleep_minutes: pref("sleep_minutes"),
+      sleep_efficiency: pref("sleep_efficiency"),
+      resting_hr: pref("resting_hr"),
+      hrv_ms: pref("hrv_ms"),
+      steps: pref("steps"),
+      active_minutes: pref("active_minutes"),
+      recovery_score: provider?.recovery_score ?? manual?.recovery_score ?? null,
+    });
+  }
+  // Newest-first — the contract every downstream reader (patterns) depends on.
+  merged.sort((a, b) => (a.day < b.day ? 1 : -1));
+  return merged;
+}
+
 export async function loadWindow(
   supabase: SupabaseClient,
   userId: string,
@@ -37,10 +74,13 @@ export async function loadWindow(
   const [physicalRes, checkinsRes, goalsRes, touchesRes] = await Promise.all([
     supabase
       .from("physical_days")
-      .select("day, sleep_minutes, sleep_efficiency, resting_hr, hrv_ms, steps, active_minutes, recovery_score")
+      .select("day, source, sleep_minutes, sleep_efficiency, resting_hr, hrv_ms, steps, active_minutes, recovery_score")
       .eq("user_id", userId)
       .gte("day", sinceDay)
-      .order("day", { ascending: false }),
+      // source asc as a tiebreaker so a day's two rows arrive in a stable order
+      // before they're merged — same determinism the brief signature relies on.
+      .order("day", { ascending: false })
+      .order("source", { ascending: true }),
     supabase
       .from("checkins")
       .select("day, slot, mood, energy, focus, note_text")
@@ -71,7 +111,11 @@ export async function loadWindow(
     if (res.error) throw new Error(`loadWindow query failed: ${res.error.message}`);
   }
 
-  const physical = (physicalRes.data ?? []) as PhysicalDay[];
+  // A day can now have TWO physical rows — manual and the band (google_health).
+  // Merge them with provider-over-manual precedence PER METRIC: the band
+  // supersedes a number it measured, while a manual metric the band didn't cover
+  // survives. Neither is double-counted; nothing is silently discarded (§5).
+  const physical = mergePhysical((physicalRes.data ?? []) as PhysicalRow[]);
   const checkins = (checkinsRes.data ?? []) as Checkin[];
   const goals = (goalsRes.data ?? []) as Goal[];
   const touches = (touchesRes.data ?? []) as GoalTouch[];

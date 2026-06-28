@@ -94,17 +94,21 @@ export async function getReading(day: string): Promise<PhysicalMetrics | null> {
   } = await supabase.auth.getUser();
   if (!user) return null;
 
+  // The manual editor prefills from the MANUAL row only — a day can also hold a
+  // band (google_health) row now, but that flows through recovery/the brief via
+  // the window merge, not back into the hand-entry form.
   const { data } = await supabase
     .from("physical_days")
     .select("sleep_minutes, sleep_efficiency, resting_hr, hrv_ms")
     .eq("user_id", user.id)
     .eq("day", day)
+    .eq("source", "manual")
     .maybeSingle();
 
   return data ?? null;
 }
 
-// Upserts on (user_id, day) with source 'manual'; recovery_score is cleared so
+// Upserts on (user_id, day, source) with source 'manual'; recovery_score is cleared so
 // the next brief read recomputes it from these inputs. An all-empty reading is a
 // no-op success — the morning check-in can be saved with no body numbers.
 export async function saveReading(
@@ -135,7 +139,9 @@ export async function saveReading(
       source: "manual",
       recovery_score: null,
     },
-    { onConflict: "user_id,day" },
+    // Keyed by source now: this upserts the manual row and never touches the
+    // band's row for the same day (PHASE5 §5 — both provenances coexist).
+    { onConflict: "user_id,day,source" },
   );
 
   if (error) {

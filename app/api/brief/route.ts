@@ -17,6 +17,8 @@ import { createClient } from "@/lib/supabase/server";
 import { loadWindow, type WindowData } from "@/lib/window";
 import { detectPatterns, windowSummary, type Pattern } from "@/lib/patterns";
 import { generateBrief } from "@/lib/brief";
+import { syncHealth } from "@/lib/health";
+import { isValidDay } from "@/lib/date";
 
 type Slot = "morning" | "evening";
 
@@ -68,7 +70,8 @@ function readStored(evidence: unknown): { patterns: Pattern[]; sig?: string } {
 }
 
 export async function GET(request: Request) {
-  const slot = new URL(request.url).searchParams.get("slot");
+  const params = new URL(request.url).searchParams;
+  const slot = params.get("slot");
   if (slot !== "morning" && slot !== "evening") {
     return NextResponse.json(
       { error: "slot must be 'morning' or 'evening'" },
@@ -86,7 +89,31 @@ export async function GET(request: Request) {
 
   const day = todayISO();
 
+  // The client passes its LOCAL day and timezone offset (getTimezoneOffset) so a
+  // band sync lands each night's data on the right civil day (§5). Falls back to
+  // the UTC day / UTC basis when absent — the brief's own day key stays UTC.
+  const localDay = (() => {
+    const d = params.get("day");
+    return d && isValidDay(d) ? d : day;
+  })();
+  const tzOffsetMin = (() => {
+    const n = Number(params.get("tz"));
+    return Number.isInteger(n) && Math.abs(n) <= 840 ? n : 0;
+  })();
+
   try {
+    // If a band is connected, pull today's data BEFORE reading the window, so
+    // new readings fold into the window — and thus into the content signature,
+    // regenerating the brief exactly once. The sync is lazy and per-day cached:
+    // a day already stored is not re-fetched, so a plain reopen writes nothing,
+    // the window is byte-identical, and the brief stays frozen. Best-effort —
+    // a sync failure must never break the brief (recovery degrades to absent).
+    await syncHealth(supabase, user.id, {
+      today: localDay,
+      tzOffsetMin,
+      lookbackDays: 2,
+    }).catch(() => {});
+
     // Compute the current inputs (and their signature) first — these are the
     // same inputs the brief is generated from.
     const win = await loadWindow(supabase, user.id);

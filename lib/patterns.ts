@@ -303,6 +303,13 @@ export function windowSummary(
   if (p?.resting_hr != null) body.push(`resting HR ${Math.round(p.resting_hr)}`);
   if (p?.hrv_ms != null) body.push(`HRV ${Math.round(p.hrv_ms)}ms`);
 
+  // Activity is honest context for the brief — never a goal, ring, or streak.
+  // Present only when a band supplied it; raw figures (no locale formatting) so
+  // the string stays a pure function of its inputs for the brief signature.
+  const activity: string[] = [];
+  if (p?.steps != null) activity.push(`${Math.round(p.steps)} steps`);
+  if (p?.active_minutes != null) activity.push(`${Math.round(p.active_minutes)} active min`);
+
   // Tending history per goal/habit: most-recent touch day + how many distinct
   // days tended in the window. Computed as the MAX day (not the first row seen)
   // so the summary doesn't depend on the order touches arrive — it's part of the
@@ -342,11 +349,14 @@ export function windowSummary(
     // Recovery is given as a sense, never a figure — it must not be echoed back
     // to the user as a score to beat.
     `Recovery reads: ${recoveryBand(p?.recovery_score ?? null)}.`,
+    activity.length ? `Today's activity — ${activity.join(", ")}.` : null,
     c
       ? `Latest check-in (${c.slot}) — mood ${c.mood}/5, energy ${c.energy}/5, focus ${c.focus}/5.`
       : "No recent check-in.",
     direction.length
       ? `Goals and habits, with how they've been tended:\n${direction.join("\n")}`
       : "No goals or habits planted yet.",
-  ].join("\n");
+  ]
+    .filter((line): line is string => line !== null)
+    .join("\n");
 }
