@@ -306,21 +306,15 @@ export async function syncHealth(
 }
 
 // ---- Disconnect: a clean, honest fall-back to manual (PHASE5 §6) ----
-// Delete the token row AND the band-sourced readings, so nothing Google lingers:
-// no orphaned tokens, and no stale band number left to shadow a future manual
-// entry for the same day. The user's OWN (manual) readings are untouched.
+// Delete ONLY the token row. The band-sourced readings already synced are real
+// history and are kept — disconnecting stops future syncing, it doesn't erase
+// the past. No new band rows are written once disconnected (the sync no-ops on a
+// missing connection), so manual entry takes over cleanly going forward; the
+// preserved rows stay as an honest record of the days the band did measure.
 export async function disconnect(
   supabase: SupabaseClient,
   userId: string,
 ): Promise<{ ok: boolean }> {
-  const { error: pErr } = await supabase
-    .from("physical_days")
-    .delete()
-    .eq("user_id", userId)
-    .eq("source", "google_health");
-  const { error: cErr } = await supabase
-    .from(TABLE)
-    .delete()
-    .eq("user_id", userId);
-  return { ok: !pErr && !cErr };
+  const { error } = await supabase.from(TABLE).delete().eq("user_id", userId);
+  return { ok: !error };
 }

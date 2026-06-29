@@ -178,8 +178,7 @@ export default async function HistoryPage({
 
             {health === "connected" ? (
               <p className="text-[0.72rem] leading-relaxed text-canopy/80">
-                Disconnecting removes the band&rsquo;s readings; anything you
-                entered by hand stays.
+                Disconnecting stops new syncing; your history stays.
               </p>
             ) : null}
 
