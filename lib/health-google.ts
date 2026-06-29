@@ -56,19 +56,18 @@ export function googleConfigured(): boolean {
 }
 
 // ---- Scopes (PHASE5 §4: request only what Grove uses) ----
-// Read-only bundles covering sleep, heart rate + daily resting HR + daily HRV,
-// and activity. Google consolidated Fitbit's ~15 scopes into functional
-// bundles; these are the current best-known identifiers. VERIFY at build time
-// against developers.google.com/health/data-types (and the scopes page) — they
-// are still consolidating. We request NOTHING beyond recovery + daily activity
-// (no weight, nutrition, location, reproductive) — a privacy posture AND what
-// keeps the eventual Restricted-scope review tractable.
+// Google Health consolidated Fitbit's ~15 scopes into a few functional BUNDLES,
+// named googlehealth.{bundle}.readonly. Grove needs exactly two:
+//   - activity_and_fitness            → sleep + steps + active minutes
+//   - health_metrics_and_measurements → heart rate, resting HR, HRV
+// That's the whole recovery + daily-activity surface and nothing more (no
+// weight, nutrition, location, reproductive) — a privacy posture AND what keeps
+// the eventual Restricted-scope review tractable. Authoritative source for the
+// exact bundle names is the Data Access dropdown when registering the scopes
+// (it lists the available bundles); verify the second name there.
 const DEFAULT_SCOPES = [
-  "https://www.googleapis.com/auth/health.sleep.read",
-  "https://www.googleapis.com/auth/health.heart_rate.read",
-  "https://www.googleapis.com/auth/health.resting_heart_rate.read",
-  "https://www.googleapis.com/auth/health.heart_rate_variability.read",
-  "https://www.googleapis.com/auth/health.activity.read",
+  "https://www.googleapis.com/auth/googlehealth.activity_and_fitness.readonly",
+  "https://www.googleapis.com/auth/googlehealth.health_metrics_and_measurements.readonly",
 ];
 
 export function scopes(): string[] {
@@ -109,11 +108,15 @@ function toTokens(c: {
 // access_type=offline is REQUIRED to receive a refresh token; prompt=consent
 // ensures one is returned even on re-auth. Getting these right here is what
 // prevents the classic "no refresh token issued" reconnect loop (§6).
+//
+// NO include_granted_scopes: incremental auth would union in any legacy Google
+// Fit scopes the account ever granted, and the Health authorization layer
+// rejects the mix — it manifests as data reads failing AFTER a clean connect.
+// Request only the Health bundles, nothing inherited.
 export function authUrl(state: string): string {
   return client().generateAuthUrl({
     access_type: "offline",
     prompt: "consent",
-    include_granted_scopes: true,
     scope: scopes(),
     state,
   });
