@@ -56,18 +56,20 @@ export function googleConfigured(): boolean {
 }
 
 // ---- Scopes (PHASE5 §4: request only what Grove uses) ----
-// Google Health consolidated Fitbit's ~15 scopes into a few functional BUNDLES,
-// named googlehealth.{bundle}.readonly. Grove needs exactly two:
-//   - activity_and_fitness            → sleep + steps + active minutes
+// Google Health consolidated Fitbit's ~15 scopes into functional BUNDLES, named
+// googlehealth.{bundle}.readonly. Grove needs exactly three:
+//   - activity_and_fitness            → steps + active minutes
 //   - health_metrics_and_measurements → heart rate, resting HR, HRV
+//   - sleep                           → sleep
 // That's the whole recovery + daily-activity surface and nothing more (no
 // weight, nutrition, location, reproductive) — a privacy posture AND what keeps
-// the eventual Restricted-scope review tractable. Authoritative source for the
-// exact bundle names is the Data Access dropdown when registering the scopes
-// (it lists the available bundles); verify the second name there.
+// the eventual Restricted-scope review tractable. These three were confirmed
+// against the live Google Cloud Data Access scope picker on 2026-06-28 and are
+// registered there; they must match exactly.
 const DEFAULT_SCOPES = [
   "https://www.googleapis.com/auth/googlehealth.activity_and_fitness.readonly",
   "https://www.googleapis.com/auth/googlehealth.health_metrics_and_measurements.readonly",
+  "https://www.googleapis.com/auth/googlehealth.sleep.readonly",
 ];
 
 export function scopes(): string[] {
