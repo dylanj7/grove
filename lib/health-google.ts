@@ -204,6 +204,12 @@ export type DayWindow = { day: string; startISO: string; endISO: string };
 
 type DataPoint = Record<string, unknown>;
 
+// The civil day after `day`, as YYYY-MM-DD. .date is a civil date, not a
+// timestamp, so this is plain UTC date arithmetic on the date string.
+function nextCivilDay(day: string): string {
+  return new Date(Date.parse(`${day}T00:00:00Z`) + 86_400_000).toISOString().slice(0, 10);
+}
+
 function filterFor(spec: TypeSpec, w: DayWindow): string {
   const t = spec.type;
   switch (spec.kind) {
@@ -212,7 +218,10 @@ function filterFor(spec: TypeSpec, w: DayWindow): string {
     case "interval":
       return `${t}.interval.start_time >= "${w.startISO}" AND ${t}.interval.start_time < "${w.endISO}"`;
     case "daily":
-      return `${t}.date = "${w.day}"`;
+      // Daily types only support >= and < on .date (not =). Express one civil
+      // day as the half-open range [day, nextDay), comparing against civil date
+      // strings — never the ISO datetimes the session/interval filters use.
+      return `${t}.date >= "${w.day}" AND ${t}.date < "${nextCivilDay(w.day)}"`;
   }
 }
 
