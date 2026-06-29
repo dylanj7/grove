@@ -185,10 +185,15 @@ export async function getIdentity(accessToken: string): Promise<string | null> {
 type Kind = "session" | "daily" | "interval";
 type TypeSpec = { type: string; kind: Kind };
 
+// `type` is the snake_case dataType id used in the FILTER. The URL path needs
+// the kebab-case form (readPoints derives it). For HR/HRV we want the DAILY
+// aggregate types (daily_resting_heart_rate / daily_heart_rate_variability) —
+// the plain heart_rate_variability is a Sample type with no daily roll-up.
+// Confirmed against Google's official data-types table 2026-06-29.
 const TYPES = {
   sleep: { type: "sleep", kind: "session" } as TypeSpec,
-  restingHr: { type: "resting_heart_rate", kind: "daily" } as TypeSpec,
-  hrv: { type: "heart_rate_variability", kind: "daily" } as TypeSpec,
+  restingHr: { type: "daily_resting_heart_rate", kind: "daily" } as TypeSpec,
+  hrv: { type: "daily_heart_rate_variability", kind: "daily" } as TypeSpec,
   steps: { type: "steps", kind: "interval" } as TypeSpec,
   active: { type: "active_minutes", kind: "interval" } as TypeSpec,
 };
@@ -221,8 +226,13 @@ async function readPoints(
   // Daily aggregates have one value per day → a plain filtered list. Session and
   // interval streams can span devices → :reconcile merges them.
   const method = spec.kind === "daily" ? "" : ":reconcile";
+  // The dataType id must be KEBAB-case in the URL path but SNAKE-case in the
+  // filter (Google's docs are explicit about this). Single-word types are
+  // identical in both; multi-word types (daily-resting-heart-rate) failed
+  // because the snake_case form was sent in the path.
+  const pathType = spec.type.replace(/_/g, "-");
   const url =
-    `${V4}/users/me/dataTypes/${encodeURIComponent(spec.type)}/dataPoints${method}` +
+    `${V4}/users/me/dataTypes/${pathType}/dataPoints${method}` +
     `?filter=${encodeURIComponent(filterFor(spec, w))}`;
   // TEMPORARY diagnostics: the dataType names and filters are unverified guesses
   // against the pre-GA v4 API, so log the request and any failure to the Vercel
