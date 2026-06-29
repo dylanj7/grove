@@ -224,12 +224,19 @@ async function readPoints(
   const url =
     `${V4}/users/me/dataTypes/${encodeURIComponent(spec.type)}/dataPoints${method}` +
     `?filter=${encodeURIComponent(filterFor(spec, w))}`;
+  // TEMPORARY diagnostics: the dataType names and filters are unverified guesses
+  // against the pre-GA v4 API, so log the request and any failure to the Vercel
+  // function logs while we confirm the TYPES map. Remove once confirmed.
+  console.error("[health read] GET", url);
   try {
     const res = await fetch(url, {
       headers: { Authorization: `Bearer ${accessToken}` },
       cache: "no-store",
     });
-    if (!res.ok) return [];
+    if (!res.ok) {
+      console.error("[health read] FAILED", spec.type, spec.kind, res.status, await res.text());
+      return [];
+    }
     const json = (await res.json()) as { dataPoints?: DataPoint[] };
     return Array.isArray(json.dataPoints) ? json.dataPoints : [];
   } catch {
