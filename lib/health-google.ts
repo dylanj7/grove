@@ -267,8 +267,18 @@ async function readPoints(
 }
 
 // ---- Defensive field readers (tolerate the payload drifting at GA) ----
-const num = (v: unknown): number | null =>
-  typeof v === "number" && Number.isFinite(v) ? v : null;
+// v4 responses are protobuf-JSON: int64 fields (bpm, counts, minute tallies)
+// arrive as STRINGS ("56", "5"), while double fields (HRV milliseconds) arrive
+// as real numbers. num() accepts either. Confirmed against live 2026-07-03
+// response bodies — see the per-type extractors below, each keyed to the
+// dataType's own field name (the wire shape is NOT a generic {value/summary}
+// envelope, as first assumed; every type nests its payload under a field
+// matching its own camelCase name, e.g. `dailyHeartRateVariability`).
+const num = (v: unknown): number | null => {
+  if (typeof v === "number" && Number.isFinite(v)) return v;
+  if (typeof v === "string" && v.trim() !== "" && Number.isFinite(Number(v))) return Number(v);
+  return null;
+};
 
 function get(obj: unknown, path: string): unknown {
   let cur: unknown = obj;
@@ -279,13 +289,76 @@ function get(obj: unknown, path: string): unknown {
   return cur;
 }
 
-// Read the first present value among candidate paths on a point's value/summary.
-function pick(p: DataPoint, paths: string[]): number | null {
-  for (const path of paths) {
-    const v = num(get(p, path)) ?? num(get(p, `value.${path}`)) ?? num(get(p, `summary.${path}`));
-    if (v != null) return v;
+// Daily HRV: { dailyHeartRateVariability: { averageHeartRateVariabilityMilliseconds } }
+function extractHrv(points: DataPoint[]): number | null {
+  for (const p of points) {
+    const v = num(get(p, "dailyHeartRateVariability.averageHeartRateVariabilityMilliseconds"));
+    if (v != null) return Math.round(v);
   }
   return null;
+}
+
+// Daily resting HR: { dailyRestingHeartRate: { beatsPerMinute } } (string)
+function extractRestingHr(points: DataPoint[]): number | null {
+  for (const p of points) {
+    const v = num(get(p, "dailyRestingHeartRate.beatsPerMinute"));
+    if (v != null) return Math.round(v);
+  }
+  return null;
+}
+
+// Steps: many per-minute interval points, { steps: { count } } (string) each —
+// sum across the day. null (not 0) when the band recorded nothing, so an
+// honest "no reading" never gets confused with a real zero-step day.
+function extractSteps(points: DataPoint[]): number | null {
+  if (points.length === 0) return null;
+  let sum = 0;
+  for (const p of points) sum += num(get(p, "steps.count")) ?? 0;
+  return Math.round(sum);
+}
+
+// Active minutes: many per-minute interval points, each
+// { activeMinutes: { activeMinutesByActivityLevel: [{ activityLevel, activeMinutes }] } }
+// (activeMinutes a string). The type is already the band's own "active
+// minutes" stream (there's no sedentary entry to filter out) — sum every
+// level across every point.
+function extractActiveMinutes(points: DataPoint[]): number | null {
+  if (points.length === 0) return null;
+  let sum = 0;
+  for (const p of points) {
+    const levels = get(p, "activeMinutes.activeMinutesByActivityLevel");
+    if (!Array.isArray(levels)) continue;
+    for (const lvl of levels) sum += num(get(lvl, "activeMinutes")) ?? 0;
+  }
+  return Math.round(sum);
+}
+
+// Sleep: each dataPoint is ONE session, { sleep: { stages: [{ type, startTime,
+// endTime }] } } — no summary field at all. Asleep = every stage whose type
+// isn't AWAKE; the period (for efficiency) is every stage's span, summed.
+// Multiple sessions in a day (a nap + the main sleep) accumulate together.
+function extractSleep(points: DataPoint[]): { minutes: number | null; efficiency: number | null } {
+  let asleepMs = 0;
+  let periodMs = 0;
+  let any = false;
+  for (const p of points) {
+    const stages = get(p, "sleep.stages");
+    if (!Array.isArray(stages)) continue;
+    for (const s of stages) {
+      const start = Date.parse(String(get(s, "startTime") ?? ""));
+      const end = Date.parse(String(get(s, "endTime") ?? ""));
+      if (!Number.isFinite(start) || !Number.isFinite(end) || end <= start) continue;
+      const ms = end - start;
+      periodMs += ms;
+      if (String(get(s, "type") ?? "").toUpperCase() !== "AWAKE") asleepMs += ms;
+      any = true;
+    }
+  }
+  if (!any) return { minutes: null, efficiency: null };
+  const minutes = Math.round(asleepMs / 60_000);
+  const efficiency =
+    periodMs > 0 ? Math.max(0, Math.min(100, Math.round((asleepMs / periodMs) * 100))) : null;
+  return { minutes, efficiency };
 }
 
 // Fetch one day across all five types and fold into a single BandReading.
@@ -303,48 +376,17 @@ async function readingForDay(
     readPoints(accessToken, TYPES.active, w),
   ]);
 
-  // Sleep: sum minutes asleep across sessions; efficiency from the field or the
-  // asleep/in-bed ratio when the field is absent.
-  let sleepMinutes: number | null = null;
-  let asleepSum = 0;
-  let periodSum = 0;
-  let effField: number | null = null;
-  for (const p of sleepPts) {
-    const asleep = pick(p, ["minutesAsleep", "minutes_asleep"]);
-    const period = pick(p, ["minutesInSleepPeriod", "minutes_in_bed", "timeInBed"]);
-    const eff = pick(p, ["efficiency"]);
-    if (asleep != null) asleepSum += asleep;
-    if (period != null) periodSum += period;
-    if (eff != null) effField = eff;
-  }
-  if (asleepSum > 0) sleepMinutes = Math.round(asleepSum);
-  let sleepEfficiency: number | null =
-    effField != null
-      ? Math.round(effField)
-      : periodSum > 0 && asleepSum > 0
-        ? Math.round((asleepSum / periodSum) * 100)
-        : null;
-  if (sleepEfficiency != null) sleepEfficiency = Math.max(0, Math.min(100, sleepEfficiency));
-
-  // Resting HR / HRV: one daily value (take the first usable point).
-  const restingHr = rhrPts.map((p) => pick(p, ["bpm", "value", "restingHeartRate"])).find((v) => v != null) ?? null;
-  const hrvMs = hrvPts.map((p) => pick(p, ["rmssd", "millis", "value", "hrv"])).find((v) => v != null) ?? null;
-
-  // Steps / active minutes: sum across the day's interval points.
-  const stepsSum = stepPts.reduce<number>((s, p) => s + (pick(p, ["countSum", "count", "steps"]) ?? 0), 0);
-  const steps = stepPts.length ? Math.round(stepsSum) : null;
-  const activeSum = activePts.reduce<number>((s, p) => s + (pick(p, ["minutes", "activeMinutes", "count"]) ?? 0), 0);
-  const activeMinutes = activePts.length ? Math.round(activeSum) : null;
+  const { minutes: sleepMinutes, efficiency: sleepEfficiency } = extractSleep(sleepPts);
 
   const reading: BandReading = {
     day: w.day,
     source: "google_health",
     sleep_minutes: sleepMinutes,
     sleep_efficiency: sleepEfficiency,
-    resting_hr: restingHr != null ? Math.round(restingHr) : null,
-    hrv_ms: hrvMs != null ? Math.round(hrvMs) : null,
-    steps,
-    active_minutes: activeMinutes,
+    resting_hr: extractRestingHr(rhrPts),
+    hrv_ms: extractHrv(hrvPts),
+    steps: extractSteps(stepPts),
+    active_minutes: extractActiveMinutes(activePts),
   };
 
   const anything =
