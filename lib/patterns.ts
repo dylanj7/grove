@@ -138,6 +138,33 @@ export function detectPatterns(
     }
   }
 
+  // ===== PHYSICAL: movement (band-fed activity — honest signal, never a target) =====
+  // Steps arrive from the band as observed state. These detectors read them the
+  // way sleep_dip reads sleep: against the person's OWN recent norm, never an
+  // external goal. movement_low is a dip worth naming; movement_steady is the
+  // rare EARNED-encouragement pattern — the brief may only praise what separate
+  // code verified, and until now almost every detector was deficit-shaped.
+  const moved = physical.filter((d) => d.steps != null);
+  if (moved.length >= 5) {
+    const base = avg(moved.map((d) => d.steps!));
+    const last3 = avg(take(moved, 3).map((d) => d.steps!));
+    if (base >= 3000 && last3 < base * 0.6) {
+      out.push({
+        code: "movement_low",
+        statement: `Movement has been sparse the last 3 days (around ${Math.round(last3 / 100) * 100} steps a day, well under your recent norm of ~${Math.round(base / 100) * 100}).`,
+        pillars: ["physical"],
+        strength: last3 < base * 0.4 ? "strong" : "moderate",
+      });
+    } else if (moved.length >= 7 && base >= 6000 && take(moved, 5).every((d) => d.steps! >= base * 0.75)) {
+      out.push({
+        code: "movement_steady",
+        statement: "Movement has held steady near your usual level all week.",
+        pillars: ["physical"],
+        strength: "weak",
+      });
+    }
+  }
+
   // One representative check-in per day for the day-trend detectors.
   const dayCheckins = latestPerDay(checkins);
 

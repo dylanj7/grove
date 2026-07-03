@@ -108,11 +108,11 @@ export async function GET(request: Request) {
     // a day already stored is not re-fetched, so a plain reopen writes nothing,
     // the window is byte-identical, and the brief stays frozen. Best-effort —
     // a sync failure must never break the brief (recovery degrades to absent).
-    await syncHealth(supabase, user.id, {
+    const syncStatus = await syncHealth(supabase, user.id, {
       today: localDay,
       tzOffsetMin,
       lookbackDays: 2,
-    }).catch(() => {});
+    }).catch(() => "error" as const);
 
     // Compute the current inputs (and their signature) first — these are the
     // same inputs the brief is generated from.
@@ -123,7 +123,17 @@ export async function GET(request: Request) {
       win.touches,
       win.goals,
     );
-    const summary = windowSummary(win.physical, win.checkins, win.goals, win.touches, day);
+    // A revoked band grant otherwise dies silently in Settings — data stops and
+    // nothing says why. Fold the durable needs_reconnect state into the summary
+    // as one plain fact so the brief may note it once, calmly (the system prompt
+    // governs tone). It's part of the summary, so it's part of the signature:
+    // the state flip regenerates the brief once, then freezes again. Transient
+    // sync errors deliberately do NOT reach the summary.
+    const baseSummary = windowSummary(win.physical, win.checkins, win.goals, win.touches, day);
+    const summary =
+      syncStatus === "needs_reconnect"
+        ? `${baseSummary}\nTheir band has lost its connection and needs reconnecting (a quiet Settings action); its readings are paused until then.`
+        : baseSummary;
     const signature = inputSignature(slot, summary, patterns);
     const tend = tendList(win.goals, win.touches);
 

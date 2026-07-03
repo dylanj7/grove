@@ -11,7 +11,13 @@ import {
   minutesToHours,
   type PhysicalMetrics,
 } from "@/lib/physical";
-import { getCheckin, saveCheckin, getReading, saveReading } from "./actions";
+import {
+  getCheckin,
+  saveCheckin,
+  getReading,
+  saveReading,
+  getBandReading,
+} from "./actions";
 
 // ---- The shared worded scale (identical in both slots; only framing shifts) ----
 const SCALE_HINTS: Record<string, [string, string]> = {
@@ -128,6 +134,31 @@ function parse(s: string): { value: number | null; bad: boolean } {
 
 const inRange = (n: number, lo: number, hi: number) => n >= lo && n <= hi;
 
+// The band's reading, shaped for quiet display. Observed state, not input —
+// when the band measured a metric, Grove shows it rather than asking for it.
+function bandRows(band: PhysicalMetrics): [string, string][] {
+  const rows: [string, string][] = [];
+  const h = minutesToHours(band.sleep_minutes);
+  if (h != null) rows.push(["Slept", `${h} h`]);
+  if (band.sleep_efficiency != null) rows.push(["Sleep efficiency", `${band.sleep_efficiency}%`]);
+  if (band.resting_hr != null) rows.push(["Resting heart rate", `${band.resting_hr} bpm`]);
+  if (band.hrv_ms != null) rows.push(["HRV", `${band.hrv_ms} ms`]);
+  return rows;
+}
+
+function ObservedRows({ rows }: { rows: [string, string][] }) {
+  return (
+    <dl className="space-y-5">
+      {rows.map(([k, val]) => (
+        <div key={k} className="flex items-center justify-between gap-4">
+          <dt className="text-[0.7rem] uppercase tracking-[0.16em] text-canopy">{k}</dt>
+          <dd className="text-[1.05rem] text-pine">{val}</dd>
+        </div>
+      ))}
+    </dl>
+  );
+}
+
 // ---- Per-slot framing. Same capture, two contexts. ----
 const COPY: Record<
   Slot,
@@ -178,17 +209,25 @@ export default function CheckinFlow({ slot }: { slot: Slot }) {
   const [hrv, setHrv] = useState("");
   const [efficiency, setEfficiency] = useState("");
 
+  // What the band already measured for last night (null = no band data — the
+  // form falls back to full manual entry, byte-for-byte the pre-band flow).
+  const [band, setBand] = useState<PhysicalMetrics | null>(null);
+
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     let alive = true;
     (async () => {
-      const [checkin, reading] = await Promise.all([
+      const [checkin, reading, bandReading] = await Promise.all([
         getCheckin(day, slot),
         isMorning ? getReading(day) : Promise.resolve(null),
+        isMorning
+          ? getBandReading(day, new Date().getTimezoneOffset())
+          : Promise.resolve(null),
       ]);
       if (!alive) return;
+      setBand(bandReading);
       if (reading) {
         const h = minutesToHours(reading.sleep_minutes);
         setSleep(h != null ? String(h) : "");
@@ -244,11 +283,16 @@ export default function CheckinFlow({ slot }: { slot: Slot }) {
         return;
       }
 
+      // Band-covered metrics are masked out of the manual save: their fields are
+      // hidden, but a value prefilled from an earlier hand entry could still sit
+      // in state — the manual row should hold only what the user actually chose
+      // to enter by hand.
       const metrics: PhysicalMetrics = {
-        sleep_minutes: hoursToMinutes(s.value),
-        sleep_efficiency: e.value != null ? Math.round(e.value) : null,
-        resting_hr: r.value != null ? Math.round(r.value) : null,
-        hrv_ms: v.value != null ? Math.round(v.value) : null,
+        sleep_minutes: band?.sleep_minutes != null ? null : hoursToMinutes(s.value),
+        sleep_efficiency:
+          band?.sleep_efficiency != null ? null : e.value != null ? Math.round(e.value) : null,
+        resting_hr: band?.resting_hr != null ? null : r.value != null ? Math.round(r.value) : null,
+        hrv_ms: band?.hrv_ms != null ? null : v.value != null ? Math.round(v.value) : null,
       };
 
       setSaving(true);
@@ -303,16 +347,28 @@ export default function CheckinFlow({ slot }: { slot: Slot }) {
   }
 
   if (view === "recorded") {
+    // The band's metrics are the day's reading for whatever it covered; manual
+    // rows appear only for metrics the band didn't measure (they'd be shadowed
+    // by provider-over-manual anyway — showing both would be dishonest).
+    const observed = isMorning && band ? bandRows(band) : [];
     const bodyRows: [string, string][] = [];
     if (isMorning) {
-      if (sleep.trim()) bodyRows.push(["Slept", `${sleep.trim()} h`]);
-      if (restingHr.trim()) bodyRows.push(["Resting heart rate", `${restingHr.trim()} bpm`]);
-      if (hrv.trim()) bodyRows.push(["HRV", `${hrv.trim()} ms`]);
-      if (efficiency.trim()) bodyRows.push(["Sleep efficiency", `${efficiency.trim()}%`]);
+      if (sleep.trim() && band?.sleep_minutes == null) bodyRows.push(["Slept", `${sleep.trim()} h`]);
+      if (restingHr.trim() && band?.resting_hr == null) bodyRows.push(["Resting heart rate", `${restingHr.trim()} bpm`]);
+      if (hrv.trim() && band?.hrv_ms == null) bodyRows.push(["HRV", `${hrv.trim()} ms`]);
+      if (efficiency.trim() && band?.sleep_efficiency == null) bodyRows.push(["Sleep efficiency", `${efficiency.trim()}%`]);
     }
     return (
       <div className="mt-12 space-y-9">
         <Voice className="text-[1.4rem]">{copy.recorded}</Voice>
+        {observed.length > 0 ? (
+          <div className="space-y-5">
+            <p className="text-[0.7rem] uppercase tracking-[0.16em] text-canopy/80">
+              Last night, from your band
+            </p>
+            <ObservedRows rows={observed} />
+          </div>
+        ) : null}
         {bodyRows.length > 0 ? (
           <dl className="space-y-5">
             {bodyRows.map(([k, val]) => (
@@ -356,13 +412,40 @@ export default function CheckinFlow({ slot }: { slot: Slot }) {
 
       {isMorning ? (
         <div className="space-y-6">
-          <p className="text-[0.7rem] uppercase tracking-[0.16em] text-canopy/80">
-            Last night&rsquo;s body — enter what you have
-          </p>
-          <NumberField id="sleep" label="Hours slept" unit="h" value={sleep} onChange={setSleep} placeholder="7.5" />
-          <NumberField id="resting-hr" label="Resting heart rate" unit="bpm" value={restingHr} onChange={setRestingHr} placeholder="54" />
-          <NumberField id="hrv" label="HRV" unit="ms" value={hrv} onChange={setHrv} placeholder="—" />
-          <NumberField id="efficiency" label="Sleep efficiency" unit="%" value={efficiency} onChange={setEfficiency} placeholder="—" />
+          {band ? (
+            <>
+              {/* The band already read last night — show it, don't ask for it.
+                  Only the metrics it missed remain as inputs. */}
+              <p className="text-[0.7rem] uppercase tracking-[0.16em] text-canopy/80">
+                Last night, from your band
+              </p>
+              <ObservedRows rows={bandRows(band)} />
+              {(band.sleep_minutes == null ||
+                band.resting_hr == null ||
+                band.hrv_ms == null ||
+                band.sleep_efficiency == null) && (
+                <p className="pt-2 text-[0.7rem] uppercase tracking-[0.16em] text-canopy/80">
+                  Add what it missed, if you have it
+                </p>
+              )}
+            </>
+          ) : (
+            <p className="text-[0.7rem] uppercase tracking-[0.16em] text-canopy/80">
+              Last night&rsquo;s body — enter what you have
+            </p>
+          )}
+          {band?.sleep_minutes == null && (
+            <NumberField id="sleep" label="Hours slept" unit="h" value={sleep} onChange={setSleep} placeholder="7.5" />
+          )}
+          {band?.resting_hr == null && (
+            <NumberField id="resting-hr" label="Resting heart rate" unit="bpm" value={restingHr} onChange={setRestingHr} placeholder="54" />
+          )}
+          {band?.hrv_ms == null && (
+            <NumberField id="hrv" label="HRV" unit="ms" value={hrv} onChange={setHrv} placeholder="—" />
+          )}
+          {band?.sleep_efficiency == null && (
+            <NumberField id="efficiency" label="Sleep efficiency" unit="%" value={efficiency} onChange={setEfficiency} placeholder="—" />
+          )}
         </div>
       ) : null}
 

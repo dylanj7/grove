@@ -4,6 +4,7 @@ import { createClient } from "@/lib/supabase/server";
 import { isValidDay } from "@/lib/date";
 import { isSlot, type Slot } from "@/lib/slot";
 import { hasAnyMetric, type PhysicalMetrics } from "@/lib/physical";
+import { syncHealth } from "@/lib/health";
 
 export type CheckinValues = {
   mood: number;
@@ -106,6 +107,42 @@ export async function getReading(day: string): Promise<PhysicalMetrics | null> {
     .maybeSingle();
 
   return data ?? null;
+}
+
+// The band's reading for a day, if one exists — so the morning check-in can show
+// last night as OBSERVED state instead of asking the user to re-type numbers the
+// band already measured. Runs the lazy sync first: the check-in is the first
+// screen of the morning, so this is the honest moment to pull the night's data
+// (cached per day — after the first load it's a single cheap select, and a
+// disconnected user pays only a token-row lookup). Best-effort throughout: any
+// failure just means "no band reading", and the manual fields appear as always.
+export async function getBandReading(
+  day: string,
+  tzOffsetMin: number,
+): Promise<PhysicalMetrics | null> {
+  if (!isValidDay(day)) return null;
+  const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) return null;
+
+  const tz = Number.isInteger(tzOffsetMin) && Math.abs(tzOffsetMin) <= 840 ? tzOffsetMin : 0;
+  await syncHealth(supabase, user.id, {
+    today: day,
+    tzOffsetMin: tz,
+    lookbackDays: 1,
+  }).catch(() => {});
+
+  const { data } = await supabase
+    .from("physical_days")
+    .select("sleep_minutes, sleep_efficiency, resting_hr, hrv_ms")
+    .eq("user_id", user.id)
+    .eq("day", day)
+    .eq("source", "google_health")
+    .maybeSingle();
+
+  return data && hasAnyMetric(data) ? data : null;
 }
 
 // Upserts on (user_id, day, source) with source 'manual'; recovery_score is cleared so
