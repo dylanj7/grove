@@ -318,7 +318,19 @@ export function windowSummary(
   touches: GoalTouch[],
   today: string,
 ): string {
-  const p = physical[0];
+  // The newest row can be a same-day partial: a band writes steps all day, but
+  // the night's sleep and the daily HR/HRV land the next morning. For the body
+  // and recovery read, use the newest row that actually CARRIES a body metric —
+  // a partial today must not shadow last night's full reading. Activity still
+  // reads the newest row (it's the closest thing to "now"). Both deterministic,
+  // so the brief's freeze holds.
+  const hasBody = (d: PhysicalDay) =>
+    d.sleep_minutes != null ||
+    d.sleep_efficiency != null ||
+    d.resting_hr != null ||
+    d.hrv_ms != null;
+  const p = physical.find(hasBody) ?? physical[0];
+  const latest = physical[0];
   const c = checkins[0];
 
   // The latest body reading, present metrics only, as plain facts. Listing
@@ -334,8 +346,8 @@ export function windowSummary(
   // Present only when a band supplied it; raw figures (no locale formatting) so
   // the string stays a pure function of its inputs for the brief signature.
   const activity: string[] = [];
-  if (p?.steps != null) activity.push(`${Math.round(p.steps)} steps`);
-  if (p?.active_minutes != null) activity.push(`${Math.round(p.active_minutes)} active min`);
+  if (latest?.steps != null) activity.push(`${Math.round(latest.steps)} steps`);
+  if (latest?.active_minutes != null) activity.push(`${Math.round(latest.active_minutes)} active min`);
 
   // Tending history per goal/habit: most-recent touch day + how many distinct
   // days tended in the window. Computed as the MAX day (not the first row seen)

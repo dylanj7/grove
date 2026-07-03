@@ -111,11 +111,15 @@ export async function getReading(day: string): Promise<PhysicalMetrics | null> {
 
 // The band's reading for a day, if one exists — so the morning check-in can show
 // last night as OBSERVED state instead of asking the user to re-type numbers the
-// band already measured. Runs the lazy sync first: the check-in is the first
-// screen of the morning, so this is the honest moment to pull the night's data
-// (cached per day — after the first load it's a single cheap select, and a
-// disconnected user pays only a token-row lookup). Best-effort throughout: any
-// failure just means "no band reading", and the manual fields appear as always.
+// band already measured. The check-in is the honest re-fetch moment, so this
+// sync is FORCED for today+yesterday: a day's band row accrues all day (steps
+// through the evening, the night's sleep and daily HR/HRV landing the next
+// morning), and the lazy row-exists cache would otherwise freeze today at
+// whatever partial state it was first written in — a first-evening steps-only
+// row would mean no sleep ever landing for the morning after. A deliberate
+// check-in open is a real need; plain brief reopens stay lazy and frozen.
+// Best-effort throughout: any failure just means "no band reading", and the
+// manual fields appear as always.
 export async function getBandReading(
   day: string,
   tzOffsetMin: number,
@@ -133,6 +137,7 @@ export async function getBandReading(
       today: day,
       tzOffsetMin: tz,
       lookbackDays: 1,
+      force: true,
     }).catch(() => {});
 
     const { data } = await supabase

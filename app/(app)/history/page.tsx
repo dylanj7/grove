@@ -48,6 +48,21 @@ export default async function HistoryPage({
     ? await connectionState(supabase, uid)
     : "unconfigured";
 
+  // The quiet proof the band is flowing: the day of its newest reading. A date,
+  // not a dashboard — enough to answer "is it working?" without opening a chart.
+  let latestBandDay: string | null = null;
+  if (health === "connected") {
+    const { data: latestBand } = await supabase
+      .from("physical_days")
+      .select("day")
+      .eq("user_id", uid)
+      .eq("source", "google_health")
+      .order("day", { ascending: false })
+      .limit(1)
+      .maybeSingle();
+    latestBandDay = latestBand?.day ?? null;
+  }
+
   const [{ data: profile }, { data: checkins }, { data: briefs }] =
     await Promise.all([
       supabase.from("profiles").select("display_name").eq("id", uid).maybeSingle(),
@@ -175,6 +190,12 @@ export default async function HistoryPage({
                 {health === "needs_reconnect" ? "Reconnect Fitbit" : "Connect Fitbit"}
               </a>
             )}
+
+            {health === "connected" && latestBandDay ? (
+              <p className="text-[0.72rem] leading-relaxed text-canopy/80">
+                Latest reading · {formatDay(latestBandDay)}
+              </p>
+            ) : null}
 
             {health === "connected" ? (
               <p className="text-[0.72rem] leading-relaxed text-canopy/80">

@@ -222,15 +222,16 @@ export default function CheckinFlow({ slot }: { slot: Slot }) {
       // Each load is independently fallible and none may brick the screen: a
       // failed call degrades to "nothing loaded" and the form still renders.
       // The band especially — manual entry must survive any band failure.
+      // getBandReading runs for BOTH slots: it force-refreshes today's band row
+      // (the check-in is the honest re-fetch moment), so the evening brief
+      // reads the day's real activity — but only the morning displays it.
       const [checkin, reading, bandReading] = await Promise.all([
         getCheckin(day, slot).catch(() => null),
         isMorning ? getReading(day).catch(() => null) : Promise.resolve(null),
-        isMorning
-          ? getBandReading(day, new Date().getTimezoneOffset()).catch(() => null)
-          : Promise.resolve(null),
+        getBandReading(day, new Date().getTimezoneOffset()).catch(() => null),
       ]);
       if (!alive) return;
-      setBand(bandReading);
+      setBand(isMorning ? bandReading : null);
       if (reading) {
         const h = minutesToHours(reading.sleep_minutes);
         setSleep(h != null ? String(h) : "");
