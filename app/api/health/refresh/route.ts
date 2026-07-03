@@ -18,11 +18,19 @@ export async function POST(request: Request) {
     return NextResponse.redirect(`${origin}/login`, { status: 303 });
   }
 
+  // TEMPORARY: syncHealth returns a status string (it doesn't normally throw),
+  // but the .catch used to swallow any real exception into an opaque "error".
+  // Log both the thrown error AND the returned status so we can see which branch
+  // produced "error" (a caught throw, a "disconnected"/"error" return, etc.).
   const status = await syncHealth(supabase, user.id, {
     today: todayISO(),
     lookbackDays: 13,
     force: true,
-  }).catch(() => "error" as const);
+  }).catch((e) => {
+    console.error("[health refresh ERROR]", e);
+    return "error" as const;
+  });
+  console.error("[health refresh] status =", status);
 
   const back =
     status === "needs_reconnect"

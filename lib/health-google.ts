@@ -257,6 +257,9 @@ async function readPoints(
       return [];
     }
     const json = (await res.json()) as { dataPoints?: DataPoint[] };
+    // TEMPORARY: log the raw 200 body so we can see whether dataPoints is truly
+    // empty or the points live under a different key (e.g. reconcile wrapping).
+    console.error("[health read OK]", spec.type, JSON.stringify(json).slice(0, 1000));
     return Array.isArray(json.dataPoints) ? json.dataPoints : [];
   } catch {
     return [];

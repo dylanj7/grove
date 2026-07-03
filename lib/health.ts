@@ -301,7 +301,12 @@ export async function syncHealth(
   const { error } = await supabase
     .from("physical_days")
     .upsert(rows, { onConflict: "user_id,day,source" });
-  if (error) return "error";
+  if (error) {
+    // TEMPORARY: surface the swallowed DB error — a failed write here is the
+    // prime suspect for "no rows + status error" while reads return 200.
+    console.error("[health sync] physical_days upsert failed", error.message, "rows:", rows.length);
+    return "error";
+  }
   return "synced";
 }
 
