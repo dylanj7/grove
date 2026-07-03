@@ -59,6 +59,48 @@ function tendList(goals: WindowData["goals"], touches: WindowData["touches"]) {
   };
 }
 
+// ---- The correspondence (the letters remember each other) ----
+// A morning brief may look back at yesterday evening's letter; an evening brief
+// looks back at this morning's, plus what actually got tended today. Both are
+// plain stored/derived facts folded into the summary — so they're part of the
+// content signature (a changed predecessor regenerates the brief once, then it
+// freezes), and the hard rules still apply: the model may only speak to what's
+// on the page.
+function prevDayISO(day: string): string {
+  return new Date(Date.parse(`${day}T00:00:00Z`) - 86_400_000).toISOString().slice(0, 10);
+}
+
+function letterLine(
+  slot: Slot,
+  prev: { headline: string; moves: unknown } | null,
+): string {
+  if (!prev?.headline) return "";
+  const moves = (Array.isArray(prev.moves) ? prev.moves : [])
+    .map((m) => (m as { text?: string })?.text)
+    .filter((t): t is string => Boolean(t));
+  const opened = slot === "morning" ? "Yesterday evening's letter" : "This morning's letter";
+  const pointed = moves.length ? ` It pointed at: ${moves.map((t) => `"${t}"`).join("; ")}.` : "";
+  return `\n${opened} read: "${prev.headline}"${pointed}`;
+}
+
+// What today's tending actually came to — the evening's loop-closing facts.
+// Sorted so the line is a pure function of WHICH tends exist, never row order.
+function tendedTodayLine(win: WindowData, day: string): string {
+  const touchedToday = new Set(win.touches.filter((t) => t.day === day).map((t) => t.goal_id));
+  const active = win.goals.filter((g) => g.status === "active");
+  const tended = active
+    .filter((g) => touchedToday.has(g.id))
+    .map((g) => `"${g.title}"`)
+    .sort();
+  const untendedDaily = active
+    .filter((g) => g.kind === "habit" && g.cadence === "daily" && !touchedToday.has(g.id))
+    .map((g) => `"${g.title}"`)
+    .sort();
+  let line = `\nTended today: ${tended.length ? tended.join(", ") : "nothing"}.`;
+  if (untendedDaily.length) line += ` Daily habits not touched today: ${untendedDaily.join(", ")}.`;
+  return line;
+}
+
 // The brief stores its patterns alongside the signature it was generated from.
 type StoredEvidence = { patterns: Pattern[]; sig: string };
 
@@ -123,17 +165,33 @@ export async function GET(request: Request) {
       win.touches,
       win.goals,
     );
-    // A revoked band grant otherwise dies silently in Settings — data stops and
-    // nothing says why. Fold the durable needs_reconnect state into the summary
-    // as one plain fact so the brief may note it once, calmly (the system prompt
-    // governs tone). It's part of the summary, so it's part of the signature:
-    // the state flip regenerates the brief once, then freezes again. Transient
-    // sync errors deliberately do NOT reach the summary.
+    // The previous letter in the correspondence: yesterday evening's for a
+    // morning brief, this morning's for an evening brief. Frozen text by the
+    // time it's read here, so the line it contributes is stable.
+    const { data: prevLetter } = await supabase
+      .from("briefs")
+      .select("headline, moves")
+      .eq("user_id", user.id)
+      .eq("day", slot === "morning" ? prevDayISO(day) : day)
+      .eq("slot", slot === "morning" ? "evening" : "morning")
+      .order("created_at", { ascending: false })
+      .limit(1)
+      .maybeSingle();
+
+    // The summary the model reads = the factual window + up to three appended
+    // fact lines, each deterministic, each therefore part of the signature:
+    //   1. a revoked band grant (otherwise it dies silently in Settings — the
+    //      brief may note it once, calmly; transient sync errors never appear),
+    //   2. the previous letter and what it pointed at (the correspondence),
+    //   3. evening only: what today's tending actually came to (the loop).
     const baseSummary = windowSummary(win.physical, win.checkins, win.goals, win.touches, day);
     const summary =
-      syncStatus === "needs_reconnect"
-        ? `${baseSummary}\nTheir band has lost its connection and needs reconnecting (a quiet Settings action); its readings are paused until then.`
-        : baseSummary;
+      baseSummary +
+      (syncStatus === "needs_reconnect"
+        ? "\nTheir band has lost its connection and needs reconnecting (a quiet Settings action); its readings are paused until then."
+        : "") +
+      letterLine(slot, prevLetter) +
+      (slot === "evening" ? tendedTodayLine(win, day) : "");
     const signature = inputSignature(slot, summary, patterns);
     const tend = tendList(win.goals, win.touches);
 
