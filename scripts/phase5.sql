@@ -67,6 +67,35 @@ create policy "own health connection" on public.health_connections
 -- while a manual metric the band doesn't cover survives (lib/window.ts).
 -- Existing rows are all source 'manual' (Phase 4), so the new key holds cleanly.
 -- ============================================================================
+-- Drop the old one-row-per-day uniqueness WHATEVER ITS FORM OR NAME — the same
+-- name-agnostic discipline phase4_5.sql used for checkins. The original table
+-- carried an inline unique(user_id, day) (auto-named physical_days_user_id_day
+-- _key), which the first cut of this migration missed: it dropped only the
+-- phase-4 index name, so the two-column uniqueness survived and every band
+-- upsert aborted the moment a day already held a manual row.
+do $$
+declare
+  rec record;
+begin
+  for rec in
+    select con.conname
+    from pg_constraint con
+    where con.conrelid = 'public.physical_days'::regclass
+      and con.contype = 'u'
+      and (
+        select array_agg(att.attname::text order by att.attname::text)
+        from pg_attribute att
+        where att.attrelid = con.conrelid
+          and att.attnum = any(con.conkey)
+      ) = array['day', 'user_id']
+  loop
+    execute format('alter table public.physical_days drop constraint %I', rec.conname);
+  end loop;
+end $$;
+
+-- Belt-and-suspenders for bare unique indexes under either historical name.
+drop index if exists public.physical_days_user_id_day_key;
 drop index if exists public.physical_days_user_day_key;
+
 create unique index if not exists physical_days_user_day_source_key
   on public.physical_days (user_id, day, source);
