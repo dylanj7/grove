@@ -219,11 +219,14 @@ export default function CheckinFlow({ slot }: { slot: Slot }) {
   useEffect(() => {
     let alive = true;
     (async () => {
+      // Each load is independently fallible and none may brick the screen: a
+      // failed call degrades to "nothing loaded" and the form still renders.
+      // The band especially — manual entry must survive any band failure.
       const [checkin, reading, bandReading] = await Promise.all([
-        getCheckin(day, slot),
-        isMorning ? getReading(day) : Promise.resolve(null),
+        getCheckin(day, slot).catch(() => null),
+        isMorning ? getReading(day).catch(() => null) : Promise.resolve(null),
         isMorning
-          ? getBandReading(day, new Date().getTimezoneOffset())
+          ? getBandReading(day, new Date().getTimezoneOffset()).catch(() => null)
           : Promise.resolve(null),
       ]);
       if (!alive) return;

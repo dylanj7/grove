@@ -127,22 +127,27 @@ export async function getBandReading(
   } = await supabase.auth.getUser();
   if (!user) return null;
 
-  const tz = Number.isInteger(tzOffsetMin) && Math.abs(tzOffsetMin) <= 840 ? tzOffsetMin : 0;
-  await syncHealth(supabase, user.id, {
-    today: day,
-    tzOffsetMin: tz,
-    lookbackDays: 1,
-  }).catch(() => {});
+  try {
+    const tz = Number.isInteger(tzOffsetMin) && Math.abs(tzOffsetMin) <= 840 ? tzOffsetMin : 0;
+    await syncHealth(supabase, user.id, {
+      today: day,
+      tzOffsetMin: tz,
+      lookbackDays: 1,
+    }).catch(() => {});
 
-  const { data } = await supabase
-    .from("physical_days")
-    .select("sleep_minutes, sleep_efficiency, resting_hr, hrv_ms")
-    .eq("user_id", user.id)
-    .eq("day", day)
-    .eq("source", "google_health")
-    .maybeSingle();
+    const { data } = await supabase
+      .from("physical_days")
+      .select("sleep_minutes, sleep_efficiency, resting_hr, hrv_ms")
+      .eq("user_id", user.id)
+      .eq("day", day)
+      .eq("source", "google_health")
+      .maybeSingle();
 
-  return data && hasAnyMetric(data) ? data : null;
+    return data && hasAnyMetric(data) ? data : null;
+  } catch {
+    // No band reading is a normal outcome, never an error the check-in sees.
+    return null;
+  }
 }
 
 // Upserts on (user_id, day, source) with source 'manual'; recovery_score is cleared so
