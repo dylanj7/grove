@@ -1,3 +1,4 @@
+import { cache } from "react";
 import { createServerClient } from "@supabase/ssr";
 import { cookies } from "next/headers";
 
@@ -5,7 +6,13 @@ import { cookies } from "next/headers";
 // Actions. Wired to Next.js request cookies so the user's session travels with
 // each request. Uses the publishable key (not the secret key) so Row Level
 // Security still applies on behalf of the signed-in user.
-export async function createClient() {
+//
+// Wrapped in React cache() so ONE client is shared across a single request's
+// render (layout + page + their reads). That both saves re-reading cookies per
+// call site and — because the client instance is now stable within a request —
+// lets cache() on downstream reads (see getSessionUser) actually dedup by
+// argument identity. Per-request only; each request/route handler gets its own.
+export const createClient = cache(async () => {
   const cookieStore = await cookies();
 
   return createServerClient(
@@ -30,4 +37,16 @@ export async function createClient() {
       },
     }
   );
-}
+});
+
+// The authenticated user, read once per request. auth.getUser() validates the
+// session against the Supabase auth server (a real round-trip), and both the app
+// layout and the page it wraps need it — so caching collapses those two calls in
+// a single render pass into one. Returns null when signed out.
+export const getSessionUser = cache(async () => {
+  const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  return user;
+});
