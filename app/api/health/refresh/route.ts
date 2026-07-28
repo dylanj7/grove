@@ -4,17 +4,15 @@
 // Keyed to the server's UTC day; the daily brief sync handles local-date nuance.
 
 import { NextResponse } from "next/server";
-import { createClient } from "@/lib/supabase/server";
+import { createClient, getUserId } from "@/lib/supabase/server";
 import { syncHealth } from "@/lib/health";
 import { todayISO } from "@/lib/date";
 
 export async function POST(request: Request) {
   const { origin } = new URL(request.url);
   const supabase = await createClient();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
-  if (!user) {
+  const uid = await getUserId();
+  if (!uid) {
     return NextResponse.redirect(`${origin}/login`, { status: 303 });
   }
 
@@ -22,7 +20,7 @@ export async function POST(request: Request) {
   // but the .catch used to swallow any real exception into an opaque "error".
   // Log both the thrown error AND the returned status so we can see which branch
   // produced "error" (a caught throw, a "disconnected"/"error" return, etc.).
-  const status = await syncHealth(supabase, user.id, {
+  const status = await syncHealth(supabase, uid, {
     today: todayISO(),
     lookbackDays: 13,
     force: true,
@@ -40,5 +38,5 @@ export async function POST(request: Request) {
         : status === "skipped"
           ? "refreshed"
           : "error";
-  return NextResponse.redirect(`${origin}/history?health=${back}`, { status: 303 });
+  return NextResponse.redirect(`${origin}/you?health=${back}`, { status: 303 });
 }

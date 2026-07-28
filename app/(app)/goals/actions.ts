@@ -1,7 +1,7 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
-import { createClient } from "@/lib/supabase/server";
+import { createClient, getUserId } from "@/lib/supabase/server";
 import { isValidDay } from "@/lib/date";
 import { isDomain, type UiKind, type Domain } from "@/lib/goal-kind";
 
@@ -23,14 +23,12 @@ export async function createGoal(input: {
   if (!isDomain(input.domain)) return { ok: false, error: "Pick a domain." };
 
   const supabase = await createClient();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
-  if (!user) return { ok: false, error: "You've been signed out. Sign in and try again." };
+  const uid = await getUserId();
+  if (!uid) return { ok: false, error: "You've been signed out. Sign in and try again." };
 
   const isHabit = input.kind === "habit";
   const { error } = await supabase.from("goals").insert({
-    user_id: user.id,
+    user_id: uid,
     title,
     aspect: input.domain,
     kind: input.kind,
@@ -57,22 +55,20 @@ export async function tendGoal(input: {
     return { ok: false, error: "Something's off with today's date. Try again." };
   }
   const supabase = await createClient();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
-  if (!user) return { ok: false, error: "You've been signed out. Sign in and try again." };
+  const uid = await getUserId();
+  if (!uid) return { ok: false, error: "You've been signed out. Sign in and try again." };
 
   // Confirm the intention is the user's before tending it.
   const { data: goal } = await supabase
     .from("goals")
     .select("id")
     .eq("id", input.goalId)
-    .eq("user_id", user.id)
+    .eq("user_id", uid)
     .maybeSingle();
   if (!goal) return { ok: false, error: "That intention couldn't be found." };
 
   const { error } = await supabase.from("goal_touches").insert({
-    user_id: user.id,
+    user_id: uid,
     goal_id: input.goalId,
     day: input.day,
     note: input.note,
@@ -98,16 +94,14 @@ export async function completeHabit(input: {
     return { ok: false, error: "Something's off with today's date. Try again." };
   }
   const supabase = await createClient();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
-  if (!user) return { ok: false, error: "You've been signed out. Sign in and try again." };
+  const uid = await getUserId();
+  if (!uid) return { ok: false, error: "You've been signed out. Sign in and try again." };
 
   const { data: goal } = await supabase
     .from("goals")
     .select("id")
     .eq("id", input.goalId)
-    .eq("user_id", user.id)
+    .eq("user_id", uid)
     .maybeSingle();
   if (!goal) return { ok: false, error: "That habit couldn't be found." };
 
@@ -115,7 +109,7 @@ export async function completeHabit(input: {
   const { data: already } = await supabase
     .from("goal_touches")
     .select("goal_id")
-    .eq("user_id", user.id)
+    .eq("user_id", uid)
     .eq("goal_id", input.goalId)
     .eq("day", input.day)
     .limit(1)
@@ -123,7 +117,7 @@ export async function completeHabit(input: {
 
   if (!already) {
     const { error } = await supabase.from("goal_touches").insert({
-      user_id: user.id,
+      user_id: uid,
       goal_id: input.goalId,
       day: input.day,
     });
@@ -144,15 +138,13 @@ export async function uncompleteHabit(input: {
     return { ok: false, error: "Something's off with today's date. Try again." };
   }
   const supabase = await createClient();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
-  if (!user) return { ok: false, error: "You've been signed out. Sign in and try again." };
+  const uid = await getUserId();
+  if (!uid) return { ok: false, error: "You've been signed out. Sign in and try again." };
 
   const { error } = await supabase
     .from("goal_touches")
     .delete()
-    .eq("user_id", user.id)
+    .eq("user_id", uid)
     .eq("goal_id", input.goalId)
     .eq("day", input.day);
   if (error) return { ok: false, error: "Couldn't update it just now. Try again." };

@@ -17,6 +17,7 @@
 // computes matches the route's byte-for-byte on the common path.
 // ----------------------------------------------------------------
 
+import { cache } from "react";
 import { createHash } from "node:crypto";
 import type { createClient } from "@/lib/supabase/server";
 import { loadWindow, type WindowData } from "@/lib/window";
@@ -126,11 +127,16 @@ export function readStored(evidence: unknown): { patterns: Pattern[]; sig?: stri
 export type BriefInputs = {
   slot: Slot;
   day: string;
+  localDay: string;
   hasCheckin: boolean;
   signature: string;
   tend: Tend;
   patterns: Pattern[];
   summary: string;
+  /** The raw window these inputs were derived from. Carried out so the screen
+   *  can render the body strip and the deterministic read (lib/read.ts) from
+   *  the SAME round-trip that fed the brief — never a second set of queries. */
+  win: WindowData;
   existing: {
     headline: string;
     body: string;
@@ -205,14 +211,23 @@ export async function loadBriefInputs(
   return {
     slot,
     day,
+    localDay,
     hasCheckin,
     signature: inputSignature(slot, summary, patterns),
     tend: tendList(win.goals, win.touches),
     patterns,
     summary,
+    win,
     existing: existingRes.data ?? null,
   };
 }
+
+// The per-request memo of the read above. The home screen renders its shell and
+// its streamed letter as two separate subtrees (so the shell paints instantly
+// and the letter arrives behind a Suspense boundary) — but both need the same
+// inputs. cache() makes the second caller reuse the first's promise, so the
+// whole screen still costs exactly ONE parallel round-trip, not two.
+export const loadBriefInputsCached = cache(loadBriefInputs);
 
 // Resolve inputs to a brief: serve the stored one when the signature matches (the
 // common path — no Claude call), else generate once and store. This is the ONLY

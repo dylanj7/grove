@@ -2,8 +2,18 @@ import { createServerClient } from "@supabase/ssr";
 import { NextResponse, type NextRequest } from "next/server";
 
 // In Next.js 16 the `middleware` convention was renamed to `proxy`.
-// This runs before every matched request: it refreshes the Supabase session
-// (so cookies stay current) and enforces route protection.
+// This runs before every matched request: it keeps the Supabase session current
+// and enforces route protection.
+//
+// SPEED: this is the very first thing that runs on every navigation, so what it
+// does costs the user directly. It uses getClaims() — a LOCAL WebCrypto
+// signature check against this project's asymmetric (ES256) signing key — not
+// getUser(), which waits on a round-trip to the auth server. Next.js's own docs
+// are explicit that proxy "is not intended for slow data fetching" and should be
+// used for optimistic checks only; the real authorization boundary is Postgres
+// RLS plus the per-screen check in the app layout, both of which still hold.
+// getClaims() still refreshes an about-to-expire session (writing the refreshed
+// cookies through setAll below), so the session stays live exactly as before.
 export async function proxy(request: NextRequest) {
   let response = NextResponse.next({ request });
 
@@ -35,24 +45,23 @@ export async function proxy(request: NextRequest) {
     }
   );
 
-  // IMPORTANT: call getUser() right away so any token refresh is written back
-  // to the response cookies before we generate a redirect.
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
+  // Called right away so any token refresh is written back to the response
+  // cookies before we generate a redirect.
+  const { data } = await supabase.auth.getClaims();
+  const signedIn = Boolean(data?.claims?.sub);
 
   const { pathname } = request.nextUrl;
   const isPublicRoute = pathname === "/login" || pathname.startsWith("/auth");
 
   // Unauthenticated users hitting a protected route → /login
-  if (!user && !isPublicRoute) {
+  if (!signedIn && !isPublicRoute) {
     const url = request.nextUrl.clone();
     url.pathname = "/login";
     return copyCookies(response, NextResponse.redirect(url));
   }
 
   // Authenticated users hitting /login → home
-  if (user && pathname === "/login") {
+  if (signedIn && pathname === "/login") {
     const url = request.nextUrl.clone();
     url.pathname = "/";
     return copyCookies(response, NextResponse.redirect(url));

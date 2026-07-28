@@ -13,7 +13,7 @@
 // ----------------------------------------------------------------
 
 import { NextResponse } from "next/server";
-import { createClient } from "@/lib/supabase/server";
+import { createClient, getUserId } from "@/lib/supabase/server";
 import { readBrief, readStored } from "@/lib/brief-read";
 import { syncHealth } from "@/lib/health";
 import { isValidDay, todayISO } from "@/lib/date";
@@ -29,10 +29,8 @@ export async function GET(request: Request) {
   }
 
   const supabase = await createClient();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
-  if (!user) {
+  const uid = await getUserId();
+  if (!uid) {
     return NextResponse.json({ error: "Not authenticated" }, { status: 401 });
   }
 
@@ -57,13 +55,13 @@ export async function GET(request: Request) {
     // not re-fetched, so a plain reopen writes nothing and the brief stays
     // frozen. Best-effort — a sync failure must never break the brief. (Its side
     // effect of flipping needs_reconnect in the DB is what readBrief then reads.)
-    await syncHealth(supabase, user.id, {
+    await syncHealth(supabase, uid, {
       today: localDay,
       tzOffsetMin,
       lookbackDays: 2,
     }).catch(() => {});
 
-    const brief = await readBrief(supabase, user.id, slot, localDay);
+    const brief = await readBrief(supabase, uid, slot, localDay);
     return NextResponse.json(brief);
   } catch (err) {
     console.error("brief generation failed:", err);
@@ -73,7 +71,7 @@ export async function GET(request: Request) {
     const { data: fallbackRow } = await supabase
       .from("briefs")
       .select("headline, body, moves, evidence")
-      .eq("user_id", user.id)
+      .eq("user_id", uid)
       .eq("day", day)
       .eq("slot", slot)
       .order("created_at", { ascending: false })

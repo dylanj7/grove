@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { ArrowLeft } from "lucide-react";
-import { createClient } from "@/lib/supabase/server";
+import { createClient, getUserId } from "@/lib/supabase/server";
 import { Screen, Eyebrow, Voice } from "@/components/ui";
 import { toUiKind, DOMAIN_LABEL, type Domain } from "@/lib/goal-kind";
 import TendControl from "./tend-control";
@@ -42,15 +42,13 @@ export default async function GoalDetailPage({
 }) {
   const { id } = await params;
   const supabase = await createClient();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
+  const uid = (await getUserId())!;
 
   const { data: goal } = await supabase
     .from("goals")
     .select("id, title, aspect, horizon, kind")
     .eq("id", id)
-    .eq("user_id", user!.id)
+    .eq("user_id", uid)
     .maybeSingle();
 
   if (!goal) notFound();
@@ -58,7 +56,7 @@ export default async function GoalDetailPage({
   const { data: touchData } = await supabase
     .from("goal_touches")
     .select("day, note")
-    .eq("user_id", user!.id)
+    .eq("user_id", uid)
     .eq("goal_id", id)
     .order("day", { ascending: false });
 

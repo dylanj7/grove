@@ -3,26 +3,24 @@
 // the signed-in user to Google's consent screen. The seam owns the URL details.
 
 import { NextResponse } from "next/server";
-import { createClient } from "@/lib/supabase/server";
+import { createClient, getUserId } from "@/lib/supabase/server";
 import { beginConnect, googleConfigured } from "@/lib/health";
 
 export async function GET(request: Request) {
   const { origin } = new URL(request.url);
   const supabase = await createClient();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
-  if (!user) return NextResponse.redirect(`${origin}/login`);
+  const uid = await getUserId();
+  if (!uid) return NextResponse.redirect(`${origin}/login`);
 
   // No Google credentials in this environment (e.g. local dev): don't pretend.
   if (!googleConfigured()) {
-    return NextResponse.redirect(`${origin}/history?health=unconfigured`);
+    return NextResponse.redirect(`${origin}/you?health=unconfigured`);
   }
 
   try {
-    const url = await beginConnect(supabase, user.id);
+    const url = await beginConnect(supabase, uid);
     return NextResponse.redirect(url);
   } catch {
-    return NextResponse.redirect(`${origin}/history?health=error`);
+    return NextResponse.redirect(`${origin}/you?health=error`);
   }
 }

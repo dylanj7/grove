@@ -1,38 +1,186 @@
 @import "tailwindcss";
 
+/* ===========================================================================
+   THE DAYLIGHT RAMP — now a ramp that turns.
+   ---------------------------------------------------------------------------
+   Grove's palette was seven fixed greens: beautiful in a screenshot, and a
+   single unchanging light no matter when you opened it. But half of Grove's
+   ritual happens after dark — the evening is one of its two moments — and a
+   glowing white page at 11pm is the fastest way to make an app feel hostile.
+
+   So the tokens are now SEMANTIC ROLES, not fixed colors. `mist` means "the
+   open ground you stand on"; `soil` means "the deepest text". Each role holds a
+   different value in daylight and in dark, and every screen written against
+   these names gained a night mode without changing a line.
+
+   The roles, floor to ceiling:
+     mist   page background, the open ground
+     dawn   raised surfaces, the faintest lift off the floor
+     bark   a second, deeper lift (sheets, pressed states)
+     sage   hairlines, dividers, quiet borders
+     canopy secondary labels, signposts, muted text
+     moss   primary interactive, active states
+     pine   strong text, headings where weight is wanted
+     soil   deepest text, the serif voice at full contrast
+     ember  the one warm accent — now, live, the thing happening
+   =========================================================================== */
+
 :root {
-  --background: #f6f8f4; /* mist — the open ground */
-  --foreground: #14271b; /* soil — the deepest text */
+  color-scheme: light;
+
+  --mist: #f6f8f4;
+  --dawn: #ecf1e8;
+  --bark: #e0e8db;
+  --sage: #c8d6c0;
+  --canopy: #6f8c76;
+  --moss: #43614c;
+  --pine: #24382a;
+  --soil: #12241a;
+
+  /* The warm accent. Dawn light coming through leaves — used for what is
+     happening NOW (a live mic, today's mark, the freshest reading). Never for
+     alarm, never for scores. */
+  --ember: #b4703a;
+  --ember-soft: #f0dcc6;
+
+  /* ---- Data hues ----------------------------------------------------------
+     The chart marks are deliberately NOT the brand greens. Grove's palette is
+     built for calm chrome, and run through the categorical validator it fails
+     outright as data color: moss sits at chroma 0.049, well under the 0.10
+     floor, so it reads as gray and stops doing identity work — and in dark mode
+     moss-vs-ember lands at ΔE 5.3 under protanopia (floor 6) and 13.0 even
+     under normal vision (floor 15), i.e. two series most people couldn't tell
+     apart. These two steps clear every check in BOTH modes (worst pair ΔE 9.2
+     light / 9.4 dark under deuteranopia; 27.6 / 26.5 normal vision).
+
+     Only two are needed because every facet plots a single series: the hue
+     distinguishes the two PILLARS (body, mind), not the rows. On the light
+     surface both sit just under 3:1, which obliges a relief channel — hence the
+     visible direct labels and the table view under every chart. */
+  --viz-body: #1baf7a;
+  --viz-mind: #eb6834;
+
+  /* Elevation. Green-tinted shadow, never neutral grey — a grey shadow on a
+     green field reads as dirt. */
+  --elev-soft: 0 1px 2px rgb(18 36 26 / 0.04), 0 2px 8px rgb(18 36 26 / 0.04);
+  --elev-lift: 0 2px 6px rgb(18 36 26 / 0.06), 0 12px 32px rgb(18 36 26 / 0.10);
+  --elev-sheet: 0 -1px 3px rgb(18 36 26 / 0.05), 0 -16px 48px rgb(18 36 26 / 0.14);
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    color-scheme: dark;
+
+    /* Not black. A forest floor at night is warm and green-black; true #000
+       makes OLED text buzz and strips every surface of its relationship. */
+    --mist: #0e1511;
+    --dawn: #17211a;
+    --bark: #1f2b23;
+    --sage: #2c3b31;
+    --canopy: #8aa891;
+    --moss: #86b593;
+    --pine: #c8dccd;
+    --soil: #e9f2eb;
+
+    --ember: #e0a06a;
+    --ember-soft: #3a2a1c;
+
+    --viz-body: #199e70;
+    --viz-mind: #d95926;
+
+    --elev-soft: 0 1px 2px rgb(0 0 0 / 0.30), 0 2px 8px rgb(0 0 0 / 0.24);
+    --elev-lift: 0 2px 6px rgb(0 0 0 / 0.36), 0 12px 32px rgb(0 0 0 / 0.44);
+    --elev-sheet: 0 -1px 3px rgb(0 0 0 / 0.30), 0 -16px 48px rgb(0 0 0 / 0.50);
+  }
+}
+
+/* Explicit override wins over the media query in both directions, so a manual
+   theme choice always sticks. */
+:root[data-theme="light"] {
+  color-scheme: light;
+  --mist: #f6f8f4;
+  --dawn: #ecf1e8;
+  --bark: #e0e8db;
+  --sage: #c8d6c0;
+  --canopy: #6f8c76;
+  --moss: #43614c;
+  --pine: #24382a;
+  --soil: #12241a;
+  --ember: #b4703a;
+  --ember-soft: #f0dcc6;
+  --viz-body: #1baf7a;
+  --viz-mind: #eb6834;
+  --elev-soft: 0 1px 2px rgb(18 36 26 / 0.04), 0 2px 8px rgb(18 36 26 / 0.04);
+  --elev-lift: 0 2px 6px rgb(18 36 26 / 0.06), 0 12px 32px rgb(18 36 26 / 0.10);
+  --elev-sheet: 0 -1px 3px rgb(18 36 26 / 0.05), 0 -16px 48px rgb(18 36 26 / 0.14);
+}
+
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --mist: #0e1511;
+  --dawn: #17211a;
+  --bark: #1f2b23;
+  --sage: #2c3b31;
+  --canopy: #8aa891;
+  --moss: #86b593;
+  --pine: #c8dccd;
+  --soil: #e9f2eb;
+  --ember: #e0a06a;
+  --ember-soft: #3a2a1c;
+  --viz-body: #199e70;
+  --viz-mind: #d95926;
+  --elev-soft: 0 1px 2px rgb(0 0 0 / 0.30), 0 2px 8px rgb(0 0 0 / 0.24);
+  --elev-lift: 0 2px 6px rgb(0 0 0 / 0.36), 0 12px 32px rgb(0 0 0 / 0.44);
+  --elev-sheet: 0 -1px 3px rgb(0 0 0 / 0.30), 0 -16px 48px rgb(0 0 0 / 0.50);
 }
 
 @theme inline {
-  /* Daylight ramp — the only colors in Grove. */
-  --color-mist: #f6f8f4; /* page background, the open ground */
-  --color-dawn: #e8efe4; /* raised surfaces, faintest lift off the floor */
-  --color-sage: #c5d3bd; /* hairlines, dividers, quiet borders */
-  --color-canopy: #7d9a82; /* secondary labels, signposts, muted text */
-  --color-moss: #4a6b54; /* primary interactive, active states */
-  --color-pine: #2a3f30; /* strong text, headings where weight is wanted */
-  --color-soil: #14271b; /* deepest text, the serif voice at full contrast */
+  --color-mist: var(--mist);
+  --color-dawn: var(--dawn);
+  --color-bark: var(--bark);
+  --color-sage: var(--sage);
+  --color-canopy: var(--canopy);
+  --color-moss: var(--moss);
+  --color-pine: var(--pine);
+  --color-soil: var(--soil);
+  --color-ember: var(--ember);
+  --color-ember-soft: var(--ember-soft);
+  --color-viz-body: var(--viz-body);
+  --color-viz-mind: var(--viz-mind);
 
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
+  --color-background: var(--color-mist);
+  --color-foreground: var(--color-soil);
 
   /* Two voices, never mixed. */
   --font-sans: var(--font-geist-sans); /* label — how you move through Grove */
   --font-voice: var(--font-fraunces); /* voice — what Grove says to you */
+
+  --shadow-soft: var(--elev-soft);
+  --shadow-lift: var(--elev-lift);
+  --shadow-sheet: var(--elev-sheet);
 }
 
 html {
   -webkit-text-size-adjust: 100%;
+  background: var(--color-mist);
 }
 
 body {
-  background: var(--background);
-  color: var(--foreground);
+  background: var(--color-mist);
+  color: var(--color-soil);
   font-family: var(--font-sans), system-ui, sans-serif;
   /* No rubber-band overscroll glow — this is an app, not a page. */
   overscroll-behavior-y: none;
+  /* Nothing in Grove is a document to select; long-press should feel like an
+     app's long-press, not a text cursor. Inputs opt back in below. */
+  -webkit-tap-highlight-color: transparent;
+}
+
+input,
+textarea,
+[contenteditable] {
+  -webkit-user-select: text;
+  user-select: text;
 }
 
 /* ---- safe-area helpers ---- */
@@ -43,9 +191,12 @@ body {
   padding-bottom: env(safe-area-inset-bottom);
 }
 
-/* ---- motion: things settle, nothing announces itself ---- */
+/* ===========================================================================
+   MOTION — things settle; nothing announces itself.
+   Two registers only: an entrance that lets content arrive, and touch feedback
+   that confirms you were heard. No attention-seeking loops.
+   =========================================================================== */
 
-/* Content rises ~8px into place on each screen entrance. */
 @keyframes grove-rise {
   from {
     opacity: 0;
@@ -57,29 +208,133 @@ body {
   }
 }
 .grove-rise {
-  animation: grove-rise 520ms cubic-bezier(0.22, 1, 0.36, 1) both;
+  animation: grove-rise 420ms cubic-bezier(0.22, 1, 0.36, 1) both;
 }
 
-/* The one living thing: the tree breathes (~9s) and its canopy sways (~12s),
-   out of phase so it never reads as a loop. Applied to separate nested
-   elements so the scale and rotation don't fight over `transform`. */
-@keyframes grove-breathe {
+/* Staggered arrival for lists — each child a beat behind the last, capped so a
+   long list never crawls in. Used on the home cards and the rhythm rows. */
+.grove-stagger > * {
+  animation: grove-rise 420ms cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+.grove-stagger > *:nth-child(1) { animation-delay: 0ms; }
+.grove-stagger > *:nth-child(2) { animation-delay: 45ms; }
+.grove-stagger > *:nth-child(3) { animation-delay: 90ms; }
+.grove-stagger > *:nth-child(4) { animation-delay: 135ms; }
+.grove-stagger > *:nth-child(5) { animation-delay: 170ms; }
+.grove-stagger > *:nth-child(n + 6) { animation-delay: 200ms; }
+
+/* THE fundamental interaction feel: everything you can press dips under the
+   thumb and springs back. This one rule is most of what separates "a website
+   with buttons" from "an app". */
+.grove-press {
+  transition:
+    transform 140ms cubic-bezier(0.22, 1, 0.36, 1),
+    background-color 160ms ease,
+    border-color 160ms ease,
+    opacity 160ms ease;
+}
+.grove-press:active {
+  transform: scale(0.97);
+}
+
+/* A gentler dip for large surfaces (full-width rows and cards), where a 3%
+   scale reads as a lurch. */
+.grove-press-soft {
+  transition:
+    transform 140ms cubic-bezier(0.22, 1, 0.36, 1),
+    background-color 160ms ease;
+}
+.grove-press-soft:active {
+  transform: scale(0.99);
+}
+
+/* The mic's listening state — a quiet pulse, not a loud "RECORDING" banner.
+   Active feedback during a deliberate action, not ambient motion. */
+@keyframes grove-pulse {
   0%,
   100% {
+    opacity: 1;
     transform: scale(1);
   }
   50% {
-    transform: scale(1.018);
+    opacity: 0.55;
+    transform: scale(1.06);
   }
+}
+.grove-pulse {
+  animation: grove-pulse 1.5s ease-in-out infinite;
+}
+
+/* A listening halo that breathes outward from the mic. */
+@keyframes grove-halo {
+  0% {
+    opacity: 0.5;
+    transform: scale(0.9);
+  }
+  70%,
+  100% {
+    opacity: 0;
+    transform: scale(1.9);
+  }
+}
+.grove-halo {
+  animation: grove-halo 2s cubic-bezier(0.22, 1, 0.36, 1) infinite;
+}
+
+/* The capture sheet: scrim fades, panel rises from the thumb. */
+@keyframes grove-scrim-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+@keyframes grove-sheet-in {
+  from {
+    opacity: 0;
+    transform: translateY(14%);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+.grove-scrim {
+  animation: grove-scrim-in 220ms ease both;
+}
+.grove-sheet {
+  animation: grove-sheet-in 300ms cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+/* Text arriving a word at a time from the model — a soft fade per chunk rather
+   than a hard append, so a streamed reply reads as speech, not as a printer. */
+@keyframes grove-fade-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+.grove-fade {
+  animation: grove-fade-in 500ms ease both;
+}
+
+/* Skeletons: a slow breath, not a strobing shimmer. */
+@keyframes grove-shimmer {
+  0%,
+  100% { opacity: 0.45; }
+  50% { opacity: 0.75; }
+}
+.grove-skeleton {
+  animation: grove-shimmer 1.8s ease-in-out infinite;
+}
+
+/* The living thing: the tree breathes (~9s) and its canopy sways (~12s), out of
+   phase so it never reads as a loop. Separate nested elements so the scale and
+   the rotation don't fight over `transform`. */
+@keyframes grove-breathe {
+  0%,
+  100% { transform: scale(1); }
+  50% { transform: scale(1.018); }
 }
 @keyframes grove-sway {
   0%,
-  100% {
-    transform: rotate(-0.6deg);
-  }
-  50% {
-    transform: rotate(0.6deg);
-  }
+  100% { transform: rotate(-0.6deg); }
+  50% { transform: rotate(0.6deg); }
 }
 .grove-breathe {
   transform-origin: 50% 92%;
@@ -90,27 +345,22 @@ body {
   animation: grove-sway 12s ease-in-out infinite;
 }
 
-/* The mic's listening state — a quiet pulse, not a loud "RECORDING" banner.
-   This is active feedback during a deliberate action, not ambient motion. */
-@keyframes grove-pulse {
-  0%,
-  100% {
-    opacity: 1;
-  }
-  50% {
-    opacity: 0.45;
-  }
-}
-.grove-pulse {
-  animation: grove-pulse 1.6s ease-in-out infinite;
-}
-
-/* Accessibility floor: no ambient motion, no entrance rise. */
+/* Accessibility floor: no ambient motion, no entrance rise, no press dip. */
 @media (prefers-reduced-motion: reduce) {
   .grove-rise,
+  .grove-stagger > *,
   .grove-breathe,
   .grove-sway,
-  .grove-pulse {
+  .grove-pulse,
+  .grove-halo,
+  .grove-scrim,
+  .grove-sheet,
+  .grove-fade,
+  .grove-skeleton {
     animation: none !important;
+  }
+  .grove-press:active,
+  .grove-press-soft:active {
+    transform: none;
   }
 }

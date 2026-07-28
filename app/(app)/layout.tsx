@@ -1,28 +1,41 @@
+import { Suspense } from "react";
 import { redirect } from "next/navigation";
-import { getSessionUser } from "@/lib/supabase/server";
+import { getUserId } from "@/lib/supabase/server";
 import TabBar from "@/components/tab-bar";
 import TzCookie from "@/components/tz-cookie";
+import CaptureProvider from "@/components/capture-provider";
 
-// The app shell: every authenticated screen renders inside this. The proxy
-// already guards these routes; we verify server-side here too as a second line.
+// The app shell: every authenticated screen renders inside this.
+//
+// The auth check here is now a LOCAL JWT verification (see lib/supabase/server),
+// not a round-trip to the auth server — and it's deduped with the one the page
+// itself does, so a navigation costs zero auth network calls instead of the
+// three it used to. The proxy's check stays as the optimistic first line;
+// Postgres RLS remains the real boundary.
 export default async function AppLayout({
   children,
 }: {
   children: React.ReactNode;
 }) {
-  const user = await getSessionUser();
-  if (!user) redirect("/login");
+  const uid = await getUserId();
+  if (!uid) redirect("/login");
 
   return (
-    <div className="flex min-h-dvh flex-col">
-      {/* Publishes the user's timezone offset to a cookie so Server Components
-          (notably /today) render the correct local slot without a round-trip. */}
-      <TzCookie />
-      {/* Bottom padding clears the fixed tab bar (its height + the safe inset). */}
-      <main className="flex-1 pb-[calc(4.5rem+env(safe-area-inset-bottom))]">
-        {children}
-      </main>
-      <TabBar />
-    </div>
+    // CaptureProvider reads search params, so it needs a Suspense boundary to
+    // avoid opting the whole shell out of static rendering.
+    <Suspense fallback={null}>
+      <CaptureProvider>
+        <div className="flex min-h-dvh flex-col">
+          {/* Publishes the user's timezone offset to a cookie so Server
+              Components render the correct local slot without a round-trip. */}
+          <TzCookie />
+          {/* Bottom padding clears the fixed tab bar (its height + safe inset). */}
+          <main className="flex-1 pb-[calc(4.75rem+env(safe-area-inset-bottom))]">
+            {children}
+          </main>
+          <TabBar />
+        </div>
+      </CaptureProvider>
+    </Suspense>
   );
 }

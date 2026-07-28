@@ -1,10 +1,10 @@
 import Link from "next/link";
 import { ChevronRight } from "lucide-react";
-import { createClient } from "@/lib/supabase/server";
-import { Screen, Eyebrow, Voice } from "@/components/ui";
+import { createClient, getUserId } from "@/lib/supabase/server";
+import { Screen, Eyebrow, Voice, SectionLabel } from "@/components/ui";
 import { toUiKind, DOMAIN_LABEL, type Domain } from "@/lib/goal-kind";
 import AddGoal from "./add-goal";
-import HabitRow from "./habit-row";
+import TendRow from "@/components/tend-row";
 
 type Row = {
   id: string;
@@ -14,7 +14,7 @@ type Row = {
   kind: string;
 };
 
-// Vectors: a quiet row that taps through to the record. No checkbox — a goal is
+// Goals: a quiet row that taps through to the record. No checkbox — a goal is
 // tended on its detail page, not completed from the list.
 function GoalRows({ rows }: { rows: Row[] }) {
   return (
@@ -23,14 +23,14 @@ function GoalRows({ rows }: { rows: Row[] }) {
         <li key={g.id}>
           <Link
             href={`/goals/${g.id}`}
-            className="flex min-h-[44px] items-center justify-between gap-3 rounded-xl px-2 py-3 transition-colors hover:bg-dawn focus-visible:bg-dawn focus-visible:outline-none"
+            className="grove-press-soft flex min-h-[48px] items-center justify-between gap-3 rounded-xl px-2 py-3 hover:bg-dawn focus-visible:bg-dawn focus-visible:outline-none"
           >
             <span className="text-[1.02rem] text-pine">{g.title}</span>
             <span className="flex shrink-0 items-center gap-3">
-              <span className="text-[0.65rem] uppercase tracking-[0.14em] text-canopy">
+              <span className="text-[0.62rem] uppercase tracking-[0.14em] text-canopy/80">
                 {DOMAIN_LABEL[g.aspect as Domain] ?? g.aspect}
               </span>
-              <ChevronRight size={16} className="text-canopy/70" />
+              <ChevronRight size={16} className="text-canopy/60" aria-hidden />
             </span>
           </Link>
         </li>
@@ -41,10 +41,7 @@ function GoalRows({ rows }: { rows: Row[] }) {
 
 export default async function GoalsPage() {
   const supabase = await createClient();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
-  const uid = user!.id;
+  const uid = (await getUserId())!;
 
   // Recent touch days (a small window covers "today" in any timezone) so each
   // habit knows whether it's done today. Computed against local day in the row.
@@ -80,7 +77,7 @@ export default async function GoalsPage() {
   if (list.length === 0) {
     return (
       <Screen className="flex min-h-[70dvh] flex-col items-center justify-center text-center">
-        <Voice className="text-[1.5rem]">Nothing planted yet.</Voice>
+        <Voice className="text-center text-[1.5rem]">Nothing planted yet.</Voice>
         <p className="mt-4 max-w-[18rem] text-sm leading-6 text-canopy">
           Your intentions will live here — what you&rsquo;re moving toward, and the
           rhythms you keep.
@@ -93,36 +90,36 @@ export default async function GoalsPage() {
   }
 
   return (
-    <Screen>
-      <Eyebrow primary="Goals" secondary="What you're moving toward" />
+    <Screen className="grove-stagger space-y-9">
+      <header className="pt-1">
+        <Eyebrow primary="Goals" secondary="What you're moving toward" />
+      </header>
 
-      <div className="mt-10 space-y-11">
-        {vectors.length > 0 ? (
-          <section className="space-y-2">
-            <Eyebrow primary="Goals" secondary="vectors" />
-            <GoalRows rows={vectors} />
-          </section>
-        ) : null}
+      {rhythms.length > 0 ? (
+        <section className="space-y-3">
+          <SectionLabel right="today">Rhythms</SectionLabel>
+          <ul className="-mx-2">
+            {rhythms.map((h) => (
+              <TendRow
+                key={h.id}
+                id={h.id}
+                title={h.title}
+                aspect={h.aspect}
+                recentDays={recentByGoal.get(h.id) ?? []}
+              />
+            ))}
+          </ul>
+        </section>
+      ) : null}
 
-        {rhythms.length > 0 ? (
-          <section className="space-y-2">
-            <Eyebrow primary="Habits" secondary="today" />
-            <ul className="-mx-2">
-              {rhythms.map((h) => (
-                <HabitRow
-                  key={h.id}
-                  id={h.id}
-                  title={h.title}
-                  aspect={h.aspect}
-                  recentDays={recentByGoal.get(h.id) ?? []}
-                />
-              ))}
-            </ul>
-          </section>
-        ) : null}
-      </div>
+      {vectors.length > 0 ? (
+        <section className="space-y-3">
+          <SectionLabel>Moving toward</SectionLabel>
+          <GoalRows rows={vectors} />
+        </section>
+      ) : null}
 
-      <div className="mt-12">
+      <div className="pt-2">
         <AddGoal />
       </div>
     </Screen>

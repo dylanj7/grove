@@ -44,14 +44,39 @@ CONTINUITY — the letters are a correspondence, not isolated notes:
 - Evening: close the morning's loop honestly. Say what its moves came to — tended, or let slip and why that's understandable given the day's state — without grading.
 - Don't manufacture continuity. If the previous letter isn't in the summary, or referring back adds nothing today, write today's letter on its own ground.
 
-OUTPUT — return ONLY valid JSON, no markdown, no preamble:
-{
-  "headline": "one line, <= 12 words, the honest state of today",
-  "body": "2-5 sentences. The connective read: state tied to direction, building toward what matters today. If a cross-pillar chain is in the patterns, name it as 'the pattern that fits', not as certainty.",
-  "moves": [ { "aspect": "physical|mental|work", "text": "one concrete move drawn from real material, imperative, <= 18 words" } ]
-}
+OUTPUT — the response schema is enforced. Fill it honestly:
+- headline: one line, at most 12 words, the honest state of today.
+- body: 2-5 sentences. The connective read: state tied to direction, building toward what matters today. If a cross-pillar chain is in the patterns, name it as "the pattern that fits", not as certainty.
+- moves: one to three concrete moves, each at most 18 words, imperative.
 
-MOVES rule: one to three concrete moves, each earned by the state + a real goal/habit (e.g. tend the specific neglected habit; protect recovery when it's low; move the goal today's focus makes reachable). Never pad to three; never generic wellness advice. If nothing genuinely needs action, return a single gentle maintenance move.`;
+MOVES rule: each move must be earned by the state + a real goal/habit (e.g. tend the specific neglected habit; protect recovery when it's low; move the goal today's focus makes reachable). Never pad to three; never generic wellness advice. If nothing genuinely needs action, return a single gentle maintenance move.`;
+
+// The brief's shape, enforced by the API rather than hoped for in the prompt.
+// This replaced a "return ONLY valid JSON" instruction plus a strip-the-
+// backticks regex and a try/catch that silently swapped in a canned brief — so
+// a single stray markdown fence used to cost a real, already-paid-for brief.
+const BRIEF_SCHEMA = {
+  type: "object",
+  properties: {
+    headline: { type: "string", description: "The honest state of today, at most 12 words." },
+    body: { type: "string", description: "2-5 sentences connecting state to direction." },
+    moves: {
+      type: "array",
+      description: "One to three concrete moves. Never padded.",
+      items: {
+        type: "object",
+        properties: {
+          aspect: { type: "string", enum: ["physical", "mental", "work"] },
+          text: { type: "string", description: "One concrete imperative move, at most 18 words." },
+        },
+        required: ["aspect", "text"],
+        additionalProperties: false,
+      },
+    },
+  },
+  required: ["headline", "body", "moves"],
+  additionalProperties: false,
+} as const;
 
 export async function generateBrief(args: {
   slot: "morning" | "evening";
@@ -75,18 +100,33 @@ ${patterns.length ? patterns.map((p) => `- [${p.strength}] ${p.statement}`).join
 
 Write the ${slot} brief as JSON.`;
 
+  // A letter is a judgment task, not a lookup — medium effort is where the
+  // read stays sharp without spending on deliberation the output can't use.
+  // max_tokens is generous because on this model the cap covers thinking AND
+  // the response together; the letter itself is only a few hundred tokens.
   const resp = await anthropic.messages.create({
-    model: "claude-sonnet-4-6",
-    max_tokens: 700,
+    model: "claude-opus-5",
+    max_tokens: 16000,
+    thinking: { type: "adaptive" },
+    output_config: {
+      effort: "medium",
+      format: { type: "json_schema", schema: BRIEF_SCHEMA },
+    },
     system: SYSTEM,
     messages: [{ role: "user", content: userMsg }],
   });
+
+  // A safety decline arrives as a normal 200 with an empty or partial body, so
+  // it has to be checked before reading content — people write hard things in a
+  // reflection, and a thrown page would be the worst possible response to that.
+  if (resp.stop_reason === "refusal") {
+    return { brief: calmBrief(slot), evidence: patterns };
+  }
 
   const text = resp.content
     .filter((b): b is Anthropic.TextBlock => b.type === "text")
     .map((b) => b.text)
     .join("")
-    .replace(/```json|```/g, "")
     .trim();
 
   try {
@@ -94,17 +134,23 @@ Write the ${slot} brief as JSON.`;
     if (!Array.isArray(parsed.moves)) parsed.moves = [];
     return { brief: parsed, evidence: patterns };
   } catch {
-    // Never crash the morning on a parse error — degrade to a calm brief.
-    return {
-      brief: {
-        headline:
-          slot === "morning"
-            ? "A fresh day. Tend what matters."
-            : "Day's done. Set down how it felt.",
-        body: "There's nothing to read into yet. Tend a check-in tonight and tomorrow's grove will have something to say.",
-        moves: [],
-      },
-      evidence: patterns,
-    };
+    // The schema is enforced, so this is now close to unreachable — but a
+    // truncated response (hitting max_tokens) could still land here. Never
+    // crash the morning on it.
+    return { brief: calmBrief(slot), evidence: patterns };
   }
+}
+
+// The floor when the model can't be reached or can't answer. Deliberately
+// content-free rather than falsely reassuring — lib/read.ts is what actually
+// carries the screen in this case.
+function calmBrief(slot: "morning" | "evening"): Brief {
+  return {
+    headline:
+      slot === "morning"
+        ? "A fresh day. Tend what matters."
+        : "Day's done. Set down how it felt.",
+    body: "There's nothing to read into yet. Tend a check-in tonight and tomorrow's grove will have something to say.",
+    moves: [],
+  };
 }
