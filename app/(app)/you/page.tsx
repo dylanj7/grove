@@ -74,7 +74,7 @@ export default async function YouPage({
   const displayName = profile?.display_name?.trim();
 
   return (
-    <Screen className="grove-stagger space-y-9">
+    <Screen className="space-y-9">
       <header className="pt-1">
         <Eyebrow primary="You" secondary="Account" />
       </header>

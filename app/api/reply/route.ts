@@ -23,6 +23,7 @@ import { createClient, getUserId } from "@/lib/supabase/server";
 import { loadWindow } from "@/lib/window";
 import { detectPatterns } from "@/lib/patterns";
 import { isSlot } from "@/lib/slot";
+import { MODELS } from "@/lib/model";
 
 const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY! });
 
@@ -96,22 +97,24 @@ Say one true thing back.`;
     // Streamed, because the point of this endpoint is presence and a blank
     // pause is absence.
     //
-    // Thinking is DISABLED here, which is the one place in Grove it is. On this
-    // model thinking runs to completion before the first text token, so on
-    // adaptive it measured ~4.2s of silence before a word appeared, against
-    // ~2.6s with it off — and the replies were no better for it (this is a
-    // short honest sentence, not a reasoning problem; the reasoning already
-    // happened in patterns.ts, deterministically). The documented risk of
-    // disabling it is internal tags leaking into visible text; that matters
-    // more here than anywhere else, since this text IS the product, so the
-    // system prompt carries the generic no-XML guard and this was checked
-    // across repeated runs. The letter, where depth genuinely pays, keeps
-    // adaptive thinking on.
+    // HAIKU, and deliberately. This is the one call in Grove where latency IS
+    // the feature: the user is still looking at the screen, and the difference
+    // between "the app heard me" and "the app is loading" is about a second.
+    // It is also not a reasoning problem — patterns.ts already did the
+    // reasoning, deterministically, and this call may only restate what it
+    // verified. That combination (hard latency floor, no reasoning to do) is
+    // exactly the shape Haiku is for, and it runs ~4x faster and ~20x cheaper
+    // than the letter's model for output that measured no worse.
+    //
+    // No `thinking` and no `output_config` here: this model predates the
+    // adaptive-thinking and effort controls, which are rejected rather than
+    // ignored. Extended thinking is opt-in, so omitting it is already the fast
+    // path — and the no-XML guard stays in the system prompt for the same
+    // reason it was added, since nothing here suppresses tag leakage for us.
+    // The letter, where depth genuinely pays, keeps Opus and adaptive thinking.
     const stream = anthropic.messages.stream({
-      model: "claude-opus-5",
+      model: MODELS.reply,
       max_tokens: 512,
-      thinking: { type: "disabled" },
-      output_config: { effort: "low" },
       system: SYSTEM,
       messages: [{ role: "user", content: userMsg }],
     });

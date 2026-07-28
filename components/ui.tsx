@@ -6,7 +6,13 @@ import type { ReactNode } from "react";
 /**
  * Screen — wraps page content. Owns the top safe-area inset, the standard side
  * padding, the centered phone-width column (Grove stays phone-shaped even on
- * desktop), and the content-rise entrance.
+ * desktop), and the single entrance animation.
+ *
+ * The entrance lives HERE rather than on each page for a reason: it is one
+ * animation on one element, so every screen in the app arrives the same way and
+ * arrives once. The previous approach staggered every section of every screen
+ * and re-ran the whole cascade on each navigation — see .grove-enter in
+ * globals.css for why that was most of what felt choppy.
  */
 export function Screen({
   children,
@@ -17,7 +23,7 @@ export function Screen({
 }) {
   return (
     <div className="pt-safe">
-      <div className={`mx-auto w-full max-w-md px-5 pt-5 ${className}`}>
+      <div className={`grove-enter mx-auto w-full max-w-md px-5 pt-5 ${className}`}>
         {children}
       </div>
     </div>

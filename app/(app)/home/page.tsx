@@ -73,7 +73,7 @@ export default async function HomePage() {
   const worthBriefing = inputs.hasCheckin || facts.length > 0;
 
   return (
-    <Screen className="grove-stagger space-y-8">
+    <Screen className="space-y-8">
       <header className="flex items-baseline justify-between gap-3 pt-1">
         <Eyebrow primary={weekday} secondary={isMorning ? "Morning" : "Evening"} />
         {inputs.hasCheckin ? (

@@ -2,9 +2,12 @@ import { cookies } from "next/headers";
 import { createClient, getUserId } from "@/lib/supabase/server";
 import { Screen, Eyebrow, Voice, SectionLabel, Card } from "@/components/ui";
 import RhythmChart from "@/components/rhythm-chart";
+import AskGrove from "@/components/ask-grove";
+import { Tree } from "@/components/tree";
 import { loadWindow } from "@/lib/window";
 import { detectPatterns } from "@/lib/patterns";
 import { buildRhythm } from "@/lib/rhythm";
+import { buildGrove, sinceLabel, type TreeDay } from "@/lib/grove-tree";
 import { localDayFromOffset, parseTzOffset, todayISO } from "@/lib/date";
 
 const STRENGTH_LABEL: Record<string, string> = {
@@ -24,22 +27,24 @@ function formatDay(day: string): string {
 // ============================================================================
 // RHYTHM — the screen that shows you your own life.
 // ----------------------------------------------------------------------------
-// This is the biggest thing the app was missing. Grove has been sitting on
-// fourteen days of sleep, heart rate, mood, energy and focus for every user and
-// rendering exactly none of it — the old "You" tab was a reverse-chronological
-// list of headlines and the word "Tended". Every competing product in this
-// space, from Oura to a paper journal, lets you look at your own record. Grove
-// made you take its word for it.
+// Four registers, zooming in, in descending order of certainty:
 //
-// Three registers, in descending order of certainty:
-//   1. THE CHART — your data, unmediated. No interpretation, no model.
-//   2. WHAT'S TRUE — the patterns lib/patterns.ts verified in code. Still no
-//      model: these are the exact statements the letter is permitted to draw
-//      on, shown plainly so the letter can never seem to know more than it does.
-//   3. THE LETTERS — the archive, last.
+//   1. THE GROVE — your whole record at once, as a tree. The trunk is time, a
+//      leaf is a day you set something down, and where a leaf sits is how that
+//      day felt. It tracks; it does not measure. (lib/grove-tree.ts explains
+//      why that distinction had to be designed rather than promised.)
+//   2. ASK — a question about your own record, answered only from what
+//      deterministic code has already verified. The one thing here that isn't
+//      a display: it's the honesty layer with a door on it.
+//   3. THE CHART — the last fourteen days, unmediated. No interpretation.
+//   4. WHAT'S TRUE — the patterns lib/patterns.ts verified in code. Still no
+//      model: these are the exact statements the letter and the answers are
+//      permitted to draw on, shown plainly so neither can ever seem to know
+//      more than it does.
+//   5. THE LETTERS — the archive, last.
 //
 // Nothing here is a score, a streak, or a comparison — not even against the
-// user's own past. It's a record you can look at.
+// user's own past. It's a record you can look at, and now one you can question.
 // ============================================================================
 export default async function RhythmPage() {
   const offset = parseTzOffset((await cookies()).get("tzoff")?.value);
@@ -48,7 +53,7 @@ export default async function RhythmPage() {
   const supabase = await createClient();
   const uid = (await getUserId())!;
 
-  const [win, { data: briefs }] = await Promise.all([
+  const [win, { data: briefs }, { data: allDays }] = await Promise.all([
     loadWindow(supabase, uid),
     supabase
       .from("briefs")
@@ -57,9 +62,20 @@ export default async function RhythmPage() {
       .order("day", { ascending: false })
       .order("created_at", { ascending: false })
       .limit(20),
+    // The tree is the ONLY thing in Grove that reads outside the fourteen-day
+    // window — it is the long memory, and a fortnight-shaped tree would defeat
+    // the point. Two narrow columns, capped: at two captures a day this covers
+    // well over a year, and buildGrove collapses it to one entry per day.
+    supabase
+      .from("checkins")
+      .select("day, mood")
+      .eq("user_id", uid)
+      .order("day", { ascending: false })
+      .limit(800),
   ]);
 
   const rhythm = buildRhythm(win, localDay);
+  const grove = buildGrove((allDays ?? []) as TreeDay[], localDay);
   const patterns = detectPatterns(win.physical, win.checkins, win.touches, win.goals)
     // checkin_state is a restatement of the most recent capture, not a trend —
     // it exists to give the model material, and it would be noise here.
@@ -68,13 +84,37 @@ export default async function RhythmPage() {
   const letters = briefs ?? [];
 
   return (
-    <Screen className="grove-stagger space-y-10">
+    <Screen className="space-y-10">
       <header className="pt-1">
-        <Eyebrow primary="Rhythm" secondary="last 14 days" />
+        <Eyebrow primary="Rhythm" secondary="your record" />
       </header>
 
+      {/* THE GROVE. Deliberately first and deliberately large: it is the only
+          view of the whole thing, and the only part of the app that rewards
+          simply having kept at it — without scoring how well. */}
+      <section className="space-y-3">
+        <Tree shape={grove} className="mx-auto block h-[15rem] w-full max-w-[16rem]" />
+        <p className="text-center text-[0.78rem] leading-relaxed text-canopy">
+          {grove.firstDay ? (
+            <>
+              A leaf for every day you&rsquo;ve set something down, since{" "}
+              {sinceLabel(grove.firstDay)}. Where a leaf sits is how that day
+              felt &mdash; not how well it went.
+            </>
+          ) : (
+            <>
+              Your grove hasn&rsquo;t been planted yet. Set something down and
+              the first leaf arrives.
+            </>
+          )}
+        </p>
+      </section>
+
+      <AskGrove />
+
       {rhythm.hasAny ? (
-        <section>
+        <section className="space-y-3">
+          <SectionLabel right="last 14 days">The shape of it</SectionLabel>
           <RhythmChart data={rhythm} todayKey={localDay} />
         </section>
       ) : (

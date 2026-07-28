@@ -31,6 +31,11 @@ export default async function AppLayout({
           <TzCookie />
           {/* Bottom padding clears the fixed tab bar (its height + safe inset). */}
           <main className="flex-1 pb-[calc(4.75rem+env(safe-area-inset-bottom))]">
+            {/* Only the content animates between routes (Screen carries
+                .grove-enter). The tab bar sits outside this element on purpose:
+                it is the one thing on screen that must read as fixed furniture,
+                and animating it between routes is what makes an app feel like a
+                website reloading. */}
             {children}
           </main>
           <TabBar />

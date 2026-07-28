@@ -14,6 +14,23 @@
 
 import { recoveryBand } from "./recovery";
 
+// The dials, as the words Grove actually speaks in. These are module-level
+// because BOTH the detector and the window summary need them, and the summary
+// used to hand the model raw "mood 4/5, energy 3/5, focus 4/5".
+//
+// That was a real hole in the no-scores rule, not a stylistic slip: every
+// prompt in the app forbids scores and grades, and then the context handed the
+// model a five-point score for each dial and trusted it not to repeat one.
+// Ask Grove duly answered a question with "a single recent check-in (focus
+// 4/5…)" — the product's single loudest promise, broken by its own context
+// string. A number the model is never given is a number it can never echo.
+const MOOD = ["", "heavy", "low", "even", "light", "bright"];
+const ENERGY = ["", "drained", "low", "steady", "full", "brimming"];
+const FOCUS = ["", "scattered", "foggy", "okay", "clear", "sharp"];
+
+const felt = (words: string[], v: number | null): string | null =>
+  v == null ? null : (words[v] ?? null);
+
 export type PhysicalDay = {
   day: string;
   sleep_minutes: number | null;
@@ -144,14 +161,29 @@ export function detectPatterns(
   // external goal. movement_low is a dip worth naming; movement_steady is the
   // rare EARNED-encouragement pattern — the brief may only praise what separate
   // code verified, and until now almost every detector was deficit-shaped.
-  const moved = physical.filter((d) => d.steps != null);
+  // TODAY IS EXCLUDED, and this is a correctness rule, not a tuning knob.
+  // Steps are the one metric that ACCUMULATES across the day — sleep, HRV and
+  // resting HR all land as finished readings, but a step count read at 9am is a
+  // tenth of the day's real total. Averaging that partial figure in alongside
+  // finished days made the detector compare a morning against full days and
+  // conclude "movement has been sparse", which is the precise failure mode the
+  // whole honesty layer exists to prevent: an assertion that is false at the
+  // moment it is made and true-looking enough to be believed.
+  //
+  // Dropping the newest day also stabilizes the brief signature — today's total
+  // stops moving the 3-day average with every band sync.
+  const newestDay = physical[0]?.day;
+  const moved = physical.filter((d) => d.steps != null && d.day !== newestDay);
   if (moved.length >= 5) {
     const base = avg(moved.map((d) => d.steps!));
     const last3 = avg(take(moved, 3).map((d) => d.steps!));
+    // Rounded coarsely for the same signature-stability reason as the window
+    // summary, and because the letter may not treat a step count as a target.
+    const coarse = (n: number) => Math.round(n / 500) * 500;
     if (base >= 3000 && last3 < base * 0.6) {
       out.push({
         code: "movement_low",
-        statement: `Movement has been sparse the last 3 days (around ${Math.round(last3 / 100) * 100} steps a day, well under your recent norm of ~${Math.round(base / 100) * 100}).`,
+        statement: `Movement has been sparse the last 3 full days (around ${coarse(last3)} steps a day, well under your recent norm of ~${coarse(base)}).`,
         pillars: ["physical"],
         strength: last3 < base * 0.4 ? "strong" : "moderate",
       });
@@ -204,9 +236,6 @@ export function detectPatterns(
     (c) => c.mood != null || c.energy != null || c.focus != null,
   );
   if (latestCheckin) {
-    const MOOD = ["", "heavy", "low", "even", "light", "bright"];
-    const ENERGY = ["", "drained", "low", "steady", "full", "brimming"];
-    const FOCUS = ["", "scattered", "foggy", "okay", "clear", "sharp"];
     const parts: string[] = [];
     if (latestCheckin.mood != null) parts.push(`mood ${MOOD[latestCheckin.mood] ?? "even"}`);
     if (latestCheckin.energy != null) parts.push(`energy ${ENERGY[latestCheckin.energy] ?? "steady"}`);
@@ -345,9 +374,25 @@ export function windowSummary(
   // Activity is honest context for the brief — never a goal, ring, or streak.
   // Present only when a band supplied it; raw figures (no locale formatting) so
   // the string stays a pure function of its inputs for the brief signature.
+  //
+  // QUANTIZED, and that is a cost decision as much as a copy one. This summary
+  // is fingerprinted into the brief's content signature, and the signature is
+  // the ONLY thing standing between the user and a fresh Opus letter. Steps
+  // climb all day and the band writes them on every sync — so at full precision
+  // a single day could mint a dozen signatures and buy a dozen letters that say
+  // materially the same thing. Rounding to the nearest 1000 steps / 15 active
+  // minutes makes the day's activity change the letter a handful of times at
+  // most, and never on noise.
+  //
+  // It is also the more truthful register: the letter is not allowed to treat a
+  // step count as a target, so it has no business knowing the number to the
+  // digit. "around 8000 steps" is exactly as much as it should be able to say.
+  const round = (n: number, to: number) => Math.round(n / to) * to;
   const activity: string[] = [];
-  if (latest?.steps != null) activity.push(`${Math.round(latest.steps)} steps`);
-  if (latest?.active_minutes != null) activity.push(`${Math.round(latest.active_minutes)} active min`);
+  if (latest?.steps != null) activity.push(`around ${round(latest.steps, 1000)} steps`);
+  if (latest?.active_minutes != null) {
+    activity.push(`around ${round(latest.active_minutes, 15)} active min`);
+  }
 
   // Tending history per goal/habit: most-recent touch day + how many distinct
   // days tended in the window. Computed as the MAX day (not the first row seen)
@@ -389,8 +434,17 @@ export function windowSummary(
     // to the user as a score to beat.
     `Recovery reads: ${recoveryBand(p?.recovery_score ?? null)}.`,
     activity.length ? `Today's activity — ${activity.join(", ")}.` : null,
+    // In words, never as N/5 — see the note on the dial arrays above.
     c
-      ? `Latest check-in (${c.slot}) — mood ${c.mood}/5, energy ${c.energy}/5, focus ${c.focus}/5.`
+      ? `Latest check-in (${c.slot}) — ${
+          [
+            felt(MOOD, c.mood) && `mood ${felt(MOOD, c.mood)}`,
+            felt(ENERGY, c.energy) && `energy ${felt(ENERGY, c.energy)}`,
+            felt(FOCUS, c.focus) && `focus ${felt(FOCUS, c.focus)}`,
+          ]
+            .filter(Boolean)
+            .join(", ") || "nothing marked"
+        }.`
       : "No recent check-in.",
     direction.length
       ? `Goals and habits, with how they've been tended:\n${direction.join("\n")}`

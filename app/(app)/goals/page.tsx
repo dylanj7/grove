@@ -90,7 +90,7 @@ export default async function GoalsPage() {
   }
 
   return (
-    <Screen className="grove-stagger space-y-9">
+    <Screen className="space-y-9">
       <header className="pt-1">
         <Eyebrow primary="Goals" secondary="What you're moving toward" />
       </header>

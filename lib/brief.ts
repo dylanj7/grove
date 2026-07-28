@@ -11,6 +11,7 @@
 
 import Anthropic from "@anthropic-ai/sdk";
 import type { Pattern } from "./patterns";
+import { MODELS, CACHEABLE_SYSTEM } from "./model";
 
 const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY! });
 
@@ -104,15 +105,22 @@ Write the ${slot} brief as JSON.`;
   // read stays sharp without spending on deliberation the output can't use.
   // max_tokens is generous because on this model the cap covers thinking AND
   // the response together; the letter itself is only a few hundred tokens.
+  //
+  // The system prompt is CACHED. It is ~1.4k tokens, it is byte-identical for
+  // every user and every slot, and it is the largest fixed input Grove sends —
+  // so it is the ideal cache prefix. This is not a per-user optimization: the
+  // cache is shared across the whole account, and briefs cluster hard in the
+  // morning, so at any real scale most letters read the prefix at a tenth of
+  // input price instead of paying full freight for the same 1.4k tokens.
   const resp = await anthropic.messages.create({
-    model: "claude-opus-5",
+    model: MODELS.letter,
     max_tokens: 16000,
     thinking: { type: "adaptive" },
     output_config: {
       effort: "medium",
       format: { type: "json_schema", schema: BRIEF_SCHEMA },
     },
-    system: SYSTEM,
+    system: [{ type: "text", text: SYSTEM, cache_control: CACHEABLE_SYSTEM }],
     messages: [{ role: "user", content: userMsg }],
   });
 

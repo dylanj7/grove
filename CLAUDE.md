@@ -48,20 +48,86 @@ mark and fires the write in a transition; only a failure moves the UI back. The
 old version called `router.refresh()` on every tap — a full server render and
 four queries to confirm state the client already had.
 
+# The tree (and the one rule it exists to obey)
+
+`lib/grove-tree.ts` + `components/tree.tsx`, shown at the top of `/rhythm`. It is
+the only view of the **whole** record — everything else in the app is a 14-day
+window.
+
+The brief was "track but not measure", which is harder than it sounds: a tree
+that fills up as you show up is a streak wearing bark. Three properties resolve
+it, and all three are load-bearing:
+
+- **The skeleton is time, not effort.** Trunk and branches grow from weeks
+  elapsed, so the tree grows on the weeks you never open the app. There is no
+  state in which it shrinks or wilts. That is what makes it safe to care about.
+- **A leaf is a day you set something down; its LIFT is how that day felt** —
+  not how well it went. A heavy day is on the tree, sitting lower. So a hard
+  month is visible as texture, never as absence.
+- **No total.** No count, no percentage, no "fullness" — and because leaf
+  position carries felt state rather than merit, there is no scalar to extract
+  and rank.
+
+The skeleton is drawn rather than implied for a reason recorded in the file: a
+leaf-per-day canopy with no branches only reads as a tree at hundreds of days.
+At a dozen it is confetti falling past a stick — exactly when a new user sees it.
+
+# Ask Grove
+
+`app/api/ask/route.ts` + `components/ask-grove.tsx`. The honesty layer with a
+door on it: ask a question about your own record and the answer is assembled
+**only** from the patterns `lib/patterns.ts` already verified plus the factual
+window. Requires `scripts/phase6.sql` (the `questions` table) — it stores the
+history and backs the daily cap, which must be durable because a serverless
+in-memory counter resets on every cold start.
+
+**"Your record can't answer that yet" is the feature, not a failure path.** It's
+what no notes app and no wellness chatbot will ever tell you, and it's what makes
+the answers that *do* come back worth anything. Most of that system prompt's
+length defends it — this is the exact surface where a model most wants to be
+helpful and invent a correlation.
+
 # The model layer
 
-`claude-opus-5` in both places, with opposite settings on purpose:
+Three jobs, three tiers, one file: `lib/model.ts`. Nothing else in the app names
+a model. Roughly $1.05/user/month, down from ~$2.75.
 
-- **The letter** (`lib/brief.ts`) — adaptive thinking, `effort: "medium"`,
-  **structured outputs** (`output_config.format`) so the JSON shape is enforced
-  rather than requested. Generated once per (day, slot), then frozen by the
-  content signature in `lib/brief-read.ts`. Handle `stop_reason: "refusal"`
-  before reading content — people write hard things in a reflection.
-- **The reply** (`app/api/reply/route.ts`) — streamed, `effort: "low"`, and the
-  one place thinking is **disabled**: thinking completes before the first text
-  token, which measured ~4.2s of silence vs ~2.6s with it off, for no gain on a
-  short honest sentence. The system prompt carries the no-XML guard that
-  disabling thinking obliges.
+The single largest saving was not the tiering — it was **quantizing volatile
+facts out of the brief's content signature** (`lib/patterns.ts`). Step counts
+drift all day as the band syncs; every drift changed the signature and bought a
+fresh Opus letter. The letter was designed to generate twice a day and was
+regenerating on step noise. Steps are now rounded to the nearest 1000, active
+minutes to 15 — which is also the more truthful register, since the letter is
+forbidden to treat a step count as a target and has no business knowing it to
+the digit.
+
+**Never put a raw dial number in a prompt.** `windowSummary()` used to emit
+`mood 4/5, energy 3/5`, and Ask duly answered a question with "a single recent
+check-in (focus 4/5…)" — the product's loudest promise broken by its own context
+string. The dials go in as words. A number the model is never given is a number
+it can never echo.
+
+The letter and the reply run opposite settings on purpose:
+
+- **The letter** (`lib/brief.ts`) — **Opus 5**, adaptive thinking,
+  `effort: "medium"`, **structured outputs** (`output_config.format`) so the JSON
+  shape is enforced rather than requested, and its system prompt is
+  **cache-marked** (~1.4k tokens, byte-identical for every user, and briefs
+  cluster in the morning — so at scale most letters read the prefix at a tenth of
+  input price). Generated once per (day, slot), then frozen by the content
+  signature in `lib/brief-read.ts`. Handle `stop_reason: "refusal"` before
+  reading content — people write hard things in a reflection.
+- **The reply** (`app/api/reply/route.ts`) — **Haiku 4.5**, streamed, no
+  `thinking` and no `output_config` (that model predates both controls and
+  rejects them). This is the one call where latency *is* the feature: the user is
+  still looking at the screen. It is also not a reasoning problem — `patterns.ts`
+  already did the reasoning — which is why it tiers down cleanly: measured 1.6s
+  to first token vs 2.5s, at ~$0.0002 a call. The system prompt keeps the no-XML
+  guard.
+- **Ask** (`app/api/ask/route.ts`) — **Opus 5**, adaptive, streamed. Tiering this
+  down would be the wrong economy: deciding what a specific record does and does
+  not license is exactly the judgment that keeps the answer honest, and exactly
+  where a cheaper model starts being agreeable instead of correct.
 
 Both are handed only the verified patterns and a factual window summary, and
 both are forbidden from referencing anything else. That constraint is the
@@ -71,8 +137,22 @@ product; don't relax it to make the copy warmer.
 
 `components/rhythm-chart.tsx` — small multiples, one series per facet, column
 -aligned on a shared time axis so body→mind coupling is *seen*, not asserted.
-Bars, never lines: a line interpolates across a day with no check-in and invents
-a value. Never put sleep-hours and the 1–5 dials on one axis.
+Never lines: a line interpolates across a day with no check-in and invents a
+value. Never put sleep-hours and the dials on one axis.
+
+**Two marks, because there are two kinds of data** (`lib/rhythm.ts` holds the
+`kind` field). Sleep is a *magnitude* → a bar from a true zero, plus a dashed
+reference at the person's usual night (without it, every night between six and
+eight hours is a near-identical near-full column and a 90-minute swing is
+invisible). The dials are *ordinal positions on a scale of words* → a mark on a
+track. A bar there claimed "bright" is five times "heavy", rendered the worst
+possible day as a visible column of something, and made a sparse fortnight look
+like a broken chart instead of eleven days nobody wrote anything down.
+
+**Every direct label carries its age.** The facet headline used to print the
+newest reading with no date, so a mood set down ten days ago read as the present
+tense — the chart stating something false while the rest of the app was built to
+make that impossible. `latestOf()` returns `daysAgo` and the label always says it.
 
 The chart hues (`--viz-body`, `--viz-mind`) are deliberately **not** the brand
 greens — run through the categorical validator, moss sits at chroma 0.049 (floor
@@ -92,6 +172,21 @@ evening ritual happens in the dark; a white page at 11pm is hostile.
 
 `.grove-press` on everything tappable is most of what separates "a website with
 buttons" from an app. Keep it.
+
+**One entrance, not a cascade.** `.grove-enter` lives on `Screen`, so every route
+arrives once, as a unit, in 190ms. It replaced `.grove-stagger`, which put a
+420ms rise on *every direct child* of *every screen* with delays out to 200ms —
+lovely on first paint, and re-run on every tab tap, so the screen dismantled and
+reassembled itself in waves on top of the route change. ~620ms of movement to
+look at a screen you were already looking at is what "choppy" meant; no easing
+fixes it, because the problem was that it ran at all. Each route also has a
+`loading.tsx`, so a tap paints instantly instead of freezing the old screen.
+
+React's `<ViewTransition>` would be better still, but **don't reach for it on
+this version**: `experimental.viewTransition` does not switch Next 16.2.9 to the
+React experimental channel (only `taint`, `transitionIndicator` and
+`gestureTransition` do), and stable React 19.2.4 doesn't export
+`unstable_ViewTransition` — so the flag buys an undefined import, not a crossfade.
 
 # The band (Phase 5 — Google Health)
 
