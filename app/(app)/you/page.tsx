@@ -1,3 +1,5 @@
+import Link from "next/link";
+import { ChevronRight } from "lucide-react";
 import { createClient, getSessionUser } from "@/lib/supabase/server";
 import { Screen, Eyebrow, SectionLabel, Card } from "@/components/ui";
 import ThemeToggle from "@/components/theme-toggle";
@@ -78,6 +80,26 @@ export default async function YouPage({
       <header className="pt-1">
         <Eyebrow primary="You" secondary="Account" />
       </header>
+
+      {/* Rhythms and vectors are tended on Home, in one list, alongside the
+          letter's own intentions. Managing them — planting, opening a record —
+          used to be a whole tab that duplicated Home; it's a screen you visit
+          rarely, reached from here. */}
+      <section className="space-y-3">
+        <SectionLabel>Intentions</SectionLabel>
+        <Link
+          href="/goals"
+          className="grove-press-soft flex min-h-[52px] items-center justify-between gap-3 rounded-2xl border border-sage/70 bg-dawn px-5 py-4 shadow-soft focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-moss/40"
+        >
+          <span className="min-w-0">
+            <span className="block text-[0.95rem] text-pine">What you&rsquo;ve planted</span>
+            <span className="mt-0.5 block text-[0.76rem] leading-snug text-canopy">
+              Your rhythms and what you&rsquo;re moving toward.
+            </span>
+          </span>
+          <ChevronRight size={16} className="shrink-0 text-canopy/60" aria-hidden />
+        </Link>
+      </section>
 
       <section className="space-y-3">
         <SectionLabel>Appearance</SectionLabel>

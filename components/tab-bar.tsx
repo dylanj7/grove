@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { Sunrise, Activity, Plus, Target, User } from "lucide-react";
+import { Sunrise, Activity, Plus, Trees, User } from "lucide-react";
 import type { ComponentType } from "react";
 import { useCapture } from "./capture-provider";
 
@@ -20,12 +20,19 @@ type Tab = {
 // "Check-in" was the third tab; it isn't a place you go, it's a thing you do,
 // so it's the center action instead — always one thumb-tap away, from anywhere,
 // with no navigation at all.
+//
+// PHASE 7 replaced "Goals" with "Grove". Goals was a tab whose entire contents
+// already appeared on Home — rhythms and vectors, verbatim — and a tab that only
+// repeats another tab isn't a destination. Its rhythms are now part of Home's
+// one tend list; managing them lives under You. The slot went to the tree, the
+// letters archive, and Ask Grove, which are the three things in the app that
+// actually reward coming back and which were all buried below a chart.
 const LEFT: Tab[] = [
   { href: "/home", label: "Home", Icon: Sunrise },
-  { href: "/rhythm", label: "Rhythm", Icon: Activity },
+  { href: "/grove", label: "Grove", Icon: Trees },
 ];
 const RIGHT: Tab[] = [
-  { href: "/goals", label: "Goals", Icon: Target },
+  { href: "/rhythm", label: "Rhythm", Icon: Activity },
   { href: "/you", label: "You", Icon: User },
 ];
 

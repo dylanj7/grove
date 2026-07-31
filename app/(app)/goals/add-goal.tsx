@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
+import { Plus } from "lucide-react";
 import { createGoal } from "./actions";
 import { DOMAINS, DOMAIN_LABEL, type Domain, type UiKind } from "@/lib/goal-kind";
 
@@ -80,13 +81,18 @@ export default function AddGoal() {
     }
   }
 
+  // The collapsed state used to be bare uppercase letterspaced text — visually
+  // identical to every SectionLabel on the screen. It read as a heading with
+  // nothing under it, which is exactly how it was reported: "a heading with no
+  // control". It is a button, so it now looks like one.
   if (!open) {
     return (
       <button
         type="button"
         onClick={() => setOpen(true)}
-        className="min-h-[44px] py-2 text-[0.7rem] font-medium uppercase tracking-[0.16em] text-moss transition-colors hover:text-pine focus-visible:outline-none focus-visible:underline"
+        className="grove-press flex min-h-[48px] w-full items-center justify-center gap-2.5 rounded-2xl border border-dashed border-sage bg-transparent px-4 text-[0.72rem] font-medium uppercase tracking-[0.16em] text-moss transition-colors hover:border-canopy hover:bg-dawn/60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-moss/40"
       >
+        <Plus size={16} strokeWidth={2.2} aria-hidden />
         Plant something
       </button>
     );

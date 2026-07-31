@@ -26,6 +26,15 @@ import { generateBrief } from "@/lib/brief";
 import { connectionState, googleConfigured, type ConnectionState } from "@/lib/health";
 import { todayISO } from "@/lib/date";
 import type { Slot } from "@/lib/slot";
+import {
+  carriedForward,
+  dayStartUTC,
+  intentionFacts,
+  resolveIntentions,
+  statesFor,
+  type Intention,
+  type MoveTend,
+} from "@/lib/intentions";
 
 type Supabase = Awaited<ReturnType<typeof createClient>>;
 
@@ -137,6 +146,10 @@ export type BriefInputs = {
    *  can render the body strip and the deterministic read (lib/read.ts) from
    *  the SAME round-trip that fed the brief — never a second set of queries. */
   win: WindowData;
+  /** Every act on a letter's intentions for this day and the one before it. */
+  moveTends: MoveTend[];
+  /** The other half of the correspondence: the letter this one answers. */
+  prevLetter: { day: string; slot: Slot; moves: Move[] } | null;
   existing: {
     headline: string;
     body: string;
@@ -144,6 +157,40 @@ export type BriefInputs = {
     evidence: unknown;
   } | null;
 };
+
+/** The moves of a stored brief, whatever shape the row happens to hold. */
+function storedMoves(moves: unknown): Move[] {
+  if (!Array.isArray(moves)) return [];
+  return moves.flatMap((m) => {
+    const move = m as { aspect?: string; text?: string };
+    return move?.text ? [{ aspect: move.aspect ?? "mental", text: move.text }] : [];
+  });
+}
+
+/**
+ * The intentions still open from the previous letter, as the UI should show
+ * them: LIVE state, no cutoff.
+ *
+ * This is deliberately a different computation from the one that feeds the
+ * summary (see carriedForward's `resolvedBefore`). The summary must be frozen
+ * at the day boundary or tending a carried-forward intention re-signs the brief
+ * and buys a replacement letter mid-morning; the screen must be live or tapping
+ * a row wouldn't visibly resolve it. Same facts, two different obligations.
+ */
+export function carriedForUi(inputs: BriefInputs): Intention[] {
+  if (!inputs.prevLetter) return [];
+  return carriedForward({
+    prevMoves: inputs.prevLetter.moves,
+    tends: inputs.moveTends,
+    prevDay: inputs.prevLetter.day,
+    prevSlot: inputs.prevLetter.slot,
+  });
+}
+
+/** This letter's own moves, resolved against what's been done with them. */
+export function intentionsFor(inputs: BriefInputs, moves: Move[]): Intention[] {
+  return resolveIntentions(moves, statesFor(inputs.moveTends, inputs.day, inputs.slot));
+}
 
 // The brief READ, collapsed to ONE parallel round-trip. loadWindow, the previous
 // letter, the connection state, and the stored brief are mutually independent —
@@ -162,8 +209,11 @@ export async function loadBriefInputs(
   localDay: string,
 ): Promise<BriefInputs> {
   const day = todayISO();
+  const prevDay = prevDayISO(day);
+  const prevSlot: Slot = slot === "morning" ? "evening" : "morning";
+  const prevLetterDay = slot === "morning" ? prevDay : day;
 
-  const [win, prevRes, connState, existingRes] = await Promise.all([
+  const [win, prevRes, connState, existingRes, tendsRes] = await Promise.all([
     loadWindow(supabase, userId),
     // The previous letter in the correspondence: yesterday evening's for a
     // morning brief, this morning's for an evening brief. Frozen text by now.
@@ -171,8 +221,8 @@ export async function loadBriefInputs(
       .from("briefs")
       .select("headline, moves")
       .eq("user_id", userId)
-      .eq("day", slot === "morning" ? prevDayISO(day) : day)
-      .eq("slot", slot === "morning" ? "evening" : "morning")
+      .eq("day", prevLetterDay)
+      .eq("slot", prevSlot)
       .order("created_at", { ascending: false })
       .limit(1)
       .maybeSingle(),
@@ -191,6 +241,17 @@ export async function loadBriefInputs(
       .order("created_at", { ascending: false })
       .limit(1)
       .maybeSingle(),
+    // What's been done with the letters' intentions — this letter's and the one
+    // it answers. Two days is the whole span the correspondence reaches, so this
+    // stays a couple of rows and joins the same parallel round-trip rather than
+    // adding a query to the screen's critical path.
+    supabase
+      .from("move_tends")
+      .select("day, slot, move_key, move_text, aspect, state, created_at")
+      .eq("user_id", userId)
+      .in("day", [day, prevDay])
+      .order("day", { ascending: false })
+      .order("move_key", { ascending: true }),
   ]);
 
   // The check-in gate, read straight off the window (check-ins are keyed to the
@@ -200,12 +261,45 @@ export async function loadBriefInputs(
   const patterns = detectPatterns(win.physical, win.checkins, win.touches, win.goals);
   const needsReconnect = connState === "needs_reconnect";
   const baseSummary = windowSummary(win.physical, win.checkins, win.goals, win.touches, day);
+
+  const moveTends = (tendsRes.data ?? []) as MoveTend[];
+  const prevMoves = storedMoves(prevRes.data?.moves);
+  const prevLetter = prevRes.data ? { day: prevLetterDay, slot: prevSlot, moves: prevMoves } : null;
+
+  // The intention facts, and the ONE place their two obligations diverge.
+  //
+  // EVENING sees this morning's intentions live, because closing the morning's
+  // loop honestly is the evening letter's whole job — and its summary already
+  // moves with the day's tending (tendedTodayLine, above), so this adds no new
+  // regeneration behavior.
+  //
+  // MORNING sees yesterday evening's intentions frozen at midnight UTC. Without
+  // that cutoff, tending a carried-forward intention at 9am would change this
+  // summary, change the signature, and replace the letter already on the screen
+  // with a freshly-paid-for one — the same failure mode that made step drift
+  // regenerate briefs until patterns.ts started quantizing it.
+  const sameDayMoves =
+    slot === "evening" && prevMoves.length
+      ? resolveIntentions(prevMoves, statesFor(moveTends, prevLetterDay, prevSlot))
+      : undefined;
+  const carried =
+    slot === "morning" && prevMoves.length
+      ? carriedForward({
+          prevMoves,
+          tends: moveTends,
+          prevDay: prevLetterDay,
+          prevSlot,
+          resolvedBefore: dayStartUTC(day),
+        })
+      : [];
+
   const summary =
     baseSummary +
     (needsReconnect
       ? "\nTheir band has lost its connection and needs reconnecting (a quiet Settings action); its readings are paused until then."
       : "") +
     letterLine(slot, prevRes.data) +
+    intentionFacts({ slot, sameDayMoves, carried }) +
     (slot === "evening" ? tendedTodayLine(win, day) : "");
 
   return {
@@ -218,6 +312,8 @@ export async function loadBriefInputs(
     patterns,
     summary,
     win,
+    moveTends,
+    prevLetter,
     existing: existingRes.data ?? null,
   };
 }

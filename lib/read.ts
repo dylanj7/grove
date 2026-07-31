@@ -50,32 +50,140 @@ export function latestBody(physical: PhysicalDay[]): PhysicalDay | null {
   );
 }
 
-/** The compact body strip: what was measured, as plain facts. Never a score. */
-export function bodyFacts(physical: PhysicalDay[]): { label: string; value: string }[] {
+export type Fact = {
+  label: string;
+  value: string;
+  /** The person's own usual, for reference. Never a target and never a delta. */
+  usual?: string;
+};
+
+/**
+ * The body, as observed state — now in two groups, because there are two kinds
+ * of reading and the screen was conflating them.
+ *
+ * Steps used to sit on a card headed LAST NIGHT. Steps are a daytime metric:
+ * the card was labelling today's walking as part of last night's sleep, which
+ * is a data-modelling error the UI stated as fact. Sleep, efficiency, resting
+ * HR and HRV describe the night; steps and active minutes describe the day so
+ * far. They are never mixed again.
+ *
+ * `nightAgeDays` exists because Home used to present a four-day-old reading as
+ * last night's, confidently, while the letter reasoned off it. Every number the
+ * app shows now carries how old it is — the same rule the chart's direct labels
+ * follow (`latestOf().daysAgo` in lib/rhythm.ts). An app whose whole promise is
+ * that it only says true things cannot afford a stale number worn as a fresh one.
+ *
+ * `usual` is the person's own median across the window, shown as a REFERENCE
+ * value, never as a signed delta against it. That distinction is the same one
+ * the chart makes with its dashed line: "your usual night is 6h 50m" is context
+ * that makes a number legible; "+40m vs your usual" is a comparison against
+ * their own past with a valence attached, which this app doesn't make.
+ */
+export type BodyRead = {
+  night: Fact[];
+  today: Fact[];
+  /** The day the night metrics were actually measured. */
+  nightDay: string | null;
+  /** Whole days between that reading and today. 0 = last night. */
+  nightAgeDays: number | null;
+  /** Older than about a day and a half — the card must say so inline. */
+  stale: boolean;
+  /** The collapsed line, so the card can stay shut and let the letter speak. */
+  summary: string;
+};
+
+const DAY_MS = 86_400_000;
+
+function daysBetween(from: string, to: string): number | null {
+  const a = Date.parse(`${from}T00:00:00Z`);
+  const b = Date.parse(`${to}T00:00:00Z`);
+  if (Number.isNaN(a) || Number.isNaN(b)) return null;
+  return Math.round((b - a) / DAY_MS);
+}
+
+function hoursLabel(minutes: number | null): string | null {
+  const hours = minutesToHours(minutes);
+  if (hours == null) return null;
+  const h = Math.floor(hours);
+  const m = Math.round((hours - h) * 60);
+  return m ? `${h}h ${m}m` : `${h}h`;
+}
+
+/** The middle of the window's readings for one metric — their usual, not a goal. */
+function median(xs: number[]): number | null {
+  if (!xs.length) return null;
+  const s = [...xs].sort((a, b) => a - b);
+  const mid = Math.floor(s.length / 2);
+  return s.length % 2 ? s[mid] : (s[mid - 1] + s[mid]) / 2;
+}
+
+function usualOf(physical: PhysicalDay[], pick: (d: PhysicalDay) => number | null): number | null {
+  // Two readings aren't a usual, they're two readings.
+  const xs = physical.flatMap((d) => {
+    const v = pick(d);
+    return v != null ? [v] : [];
+  });
+  return xs.length >= 4 ? median(xs) : null;
+}
+
+/** The body strip: what was measured, as plain facts. Never a score. */
+export function bodyRead(physical: PhysicalDay[], localDay: string): BodyRead {
   const p = latestBody(physical);
   const latest = physical[0];
-  const facts: { label: string; value: string }[] = [];
-  if (!p && !latest) return facts;
 
-  const hours = minutesToHours(p?.sleep_minutes ?? null);
-  if (hours != null) {
-    const h = Math.floor(hours);
-    const m = Math.round((hours - h) * 60);
-    facts.push({ label: "Slept", value: m ? `${h}h ${m}m` : `${h}h` });
+  const night: Fact[] = [];
+  const today: Fact[] = [];
+
+  const slept = hoursLabel(p?.sleep_minutes ?? null);
+  if (slept) {
+    const usual = hoursLabel(usualOf(physical, (d) => d.sleep_minutes));
+    night.push({ label: "Slept", value: slept, usual: usual ?? undefined });
   }
   if (p?.sleep_efficiency != null) {
-    facts.push({ label: "Efficiency", value: `${Math.round(p.sleep_efficiency)}%` });
+    night.push({ label: "Efficiency", value: `${Math.round(p.sleep_efficiency)}%` });
   }
   if (p?.resting_hr != null) {
-    facts.push({ label: "Resting HR", value: `${Math.round(p.resting_hr)}` });
+    const usual = usualOf(physical, (d) => d.resting_hr);
+    night.push({
+      label: "Resting HR",
+      value: `${Math.round(p.resting_hr)}`,
+      usual: usual != null ? `${Math.round(usual)}` : undefined,
+    });
   }
   if (p?.hrv_ms != null) {
-    facts.push({ label: "HRV", value: `${Math.round(p.hrv_ms)}ms` });
+    const usual = usualOf(physical, (d) => d.hrv_ms);
+    night.push({
+      label: "HRV",
+      value: `${Math.round(p.hrv_ms)}ms`,
+      usual: usual != null ? `${Math.round(usual)}ms` : undefined,
+    });
   }
-  if (latest?.steps != null) {
-    facts.push({ label: "Steps", value: Math.round(latest.steps).toLocaleString("en-US") });
+
+  // Today's movement, and only if it IS today's — a step count from Monday
+  // shown on Thursday is the same lie in a different metric.
+  if (latest?.steps != null && latest.day === localDay) {
+    today.push({ label: "Steps", value: Math.round(latest.steps).toLocaleString("en-US") });
   }
-  return facts;
+  if (latest?.active_minutes != null && latest.day === localDay) {
+    today.push({ label: "Active", value: `${Math.round(latest.active_minutes)}m` });
+  }
+
+  const nightDay = p?.day ?? null;
+  const nightAgeDays = nightDay ? daysBetween(nightDay, localDay) : null;
+  // A morning reading lands same-day or next-day depending on when the band
+  // syncs, so "last night" honestly covers 0 and 1. Two days is stale.
+  const stale = nightAgeDays != null && nightAgeDays >= 2;
+
+  const recovery = recoveryBand(p?.recovery_score ?? null);
+  const summary = (() => {
+    if (!p && !latest) return "";
+    if (slept && recovery !== "no read yet") return `${slept} of sleep, and recovery reads ${recovery}.`;
+    if (slept) return `${slept} of sleep.`;
+    if (recovery !== "no read yet") return `Recovery reads ${recovery}.`;
+    return "The band's numbers, as measured.";
+  })();
+
+  return { night, today, nightDay, nightAgeDays, stale, summary };
 }
 
 const MOOD = ["", "heavy", "low", "even", "light", "bright"];

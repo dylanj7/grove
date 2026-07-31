@@ -8,7 +8,7 @@ import {
   useSyncExternalStore,
 } from "react";
 import { useRouter } from "next/navigation";
-import { Mic, X, Plus } from "lucide-react";
+import { Mic, X, Plus, Leaf } from "lucide-react";
 import {
   dictationSupported,
   startDictation,
@@ -62,6 +62,29 @@ const SCALES: { key: "mood" | "energy" | "focus"; label: string; lo: string; hi:
   { key: "focus", label: "Focus", lo: "scattered", hi: "clear" },
 ];
 
+// THE QUICK PATH. Four one-tap reads that fill all three dials at once.
+//
+// The sheet's fastest honest entry used to be three taps plus a decision about
+// what each anonymous bar meant. A person standing in a kitchen doesn't do
+// that, and the entry they skip is the day that goes missing from the record —
+// which is why the fourteen-day table is nearly all dashes. These are the four
+// shapes a day actually comes in; anything more specific belongs in the note.
+//
+// Deliberately NOT submit-on-tap. A preset fills the dials and leaves the sheet
+// open, because the note is still the point and the mic is right there. It's a
+// five-second floor, not a five-second ceiling.
+const PRESETS: {
+  label: string;
+  mood: number;
+  energy: number;
+  focus: number;
+}[] = [
+  { label: "Good day", mood: 4, energy: 4, focus: 4 },
+  { label: "Fine", mood: 3, energy: 3, focus: 3 },
+  { label: "Running low", mood: 3, energy: 2, focus: 2 },
+  { label: "Heavy", mood: 2, energy: 2, focus: 3 },
+];
+
 // A dial that can be UNSET. Five taps, no numbers, no default selection — the
 // row reads as a gradient, and the words sit at the ends where they belong.
 function Dial({
@@ -112,6 +135,14 @@ function Dial({
             </button>
           );
         })}
+      </div>
+      {/* The poles, AT REST. Without these a first-time user sees three
+          anonymous five-segment bars and has to touch one to find out what it
+          measures — so the honest response is to not touch any of them. The
+          scale has to be legible before it's used, not after. */}
+      <div className="mt-1 flex justify-between text-[0.6rem] uppercase tracking-[0.1em] text-canopy/50">
+        <span>{lo}</span>
+        <span>{hi}</span>
       </div>
     </div>
   );
@@ -168,6 +199,8 @@ export default function CaptureSheet({ onClose }: { onClose: () => void }) {
   const [focus, setFocus] = useState<number | null>(null);
 
   const [showBody, setShowBody] = useState(false);
+  const [bodyLoading, setBodyLoading] = useState(false);
+  const [bodyKnown, setBodyKnown] = useState<{ day: string; fromBand: boolean } | null>(null);
   const [sleep, setSleep] = useState("");
   const [restingHr, setRestingHr] = useState("");
   const [hrv, setHrv] = useState("");
@@ -238,6 +271,31 @@ export default function CaptureSheet({ onClose }: { onClose: () => void }) {
       abortRef.current?.abort();
     };
   }, [onClose]);
+
+  // Opening the body disclosure fills it in from what the app already has,
+  // rather than presenting four empty boxes and asking a person to re-type
+  // numbers their band synced overnight. If nothing is known it stays empty and
+  // nothing is said — the absence is the honest state, not an error.
+  async function openBody() {
+    setShowBody(true);
+    setBodyLoading(true);
+    try {
+      const res = await fetch(`/api/body/latest?day=${day}`);
+      const reading = res.ok ? (await res.json())?.reading : null;
+      if (reading) {
+        setBodyKnown({ day: reading.day, fromBand: Boolean(reading.fromBand) });
+        if (reading.sleepHours != null) setSleep(String(reading.sleepHours));
+        if (reading.restingHr != null) setRestingHr(String(Math.round(reading.restingHr)));
+        if (reading.hrvMs != null) setHrv(String(Math.round(reading.hrvMs)));
+        if (reading.efficiency != null) setEfficiency(String(Math.round(reading.efficiency)));
+      }
+    } catch {
+      // Offline, or the read failed. The inputs still work by hand; saying
+      // nothing is better than an error about a convenience.
+    } finally {
+      setBodyLoading(false);
+    }
+  }
 
   function parseNum(s: string): number | null {
     const t = s.trim();
@@ -364,6 +422,15 @@ export default function CaptureSheet({ onClose }: { onClose: () => void }) {
         {view === "reply" ? (
           // ---- Grove answers ----
           <div className="flex min-h-[16rem] flex-col px-5 pb-[calc(1.5rem+env(safe-area-inset-bottom))] pt-6">
+            {/* THE REWARD MOMENT. The capture used to end by dismissing, which
+                meant the one gesture the whole app is built around had no
+                acknowledgement at all. This is the leaf landing — the moment
+                the metaphor and the mechanic touch — and it plays once, for
+                900ms, before the letter starts arriving underneath it. */}
+            <p className="mb-5 flex items-center gap-2.5 text-[0.72rem] uppercase tracking-[0.14em] text-canopy">
+              <Leaf size={16} aria-hidden className="grove-leaf-land text-moss" />
+              A leaf for today
+            </p>
             <div className="flex-1">
               {reply ? (
                 <p className="grove-fade font-voice text-[1.25rem] leading-[1.5] text-soil">
@@ -445,6 +512,34 @@ export default function CaptureSheet({ onClose }: { onClose: () => void }) {
                 ) : null}
               </div>
 
+              {/* The five-second path, first — before the dials, because it
+                  IS the dials for anyone who isn't going to touch three of
+                  them. Tapping one is a complete, valid capture. */}
+              <div className="mt-5 flex flex-wrap gap-2">
+                {PRESETS.map((p) => {
+                  const on = mood === p.mood && energy === p.energy && focus === p.focus;
+                  return (
+                    <button
+                      key={p.label}
+                      type="button"
+                      aria-pressed={on}
+                      onClick={() => {
+                        setMood(p.mood);
+                        setEnergy(p.energy);
+                        setFocus(p.focus);
+                      }}
+                      className={`grove-press min-h-[40px] rounded-full border px-3.5 text-[0.78rem] transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-moss/40 ${
+                        on
+                          ? "border-moss bg-moss text-mist"
+                          : "border-sage bg-dawn text-pine hover:border-canopy"
+                      }`}
+                    >
+                      {p.label}
+                    </button>
+                  );
+                })}
+              </div>
+
               <div className="mt-6 space-y-4">
                 {SCALES.map((s) => (
                   <Dial
@@ -466,8 +561,19 @@ export default function CaptureSheet({ onClose }: { onClose: () => void }) {
                 {showBody ? (
                   <div className="space-y-3">
                     <p className="text-[0.66rem] font-medium uppercase tracking-[0.16em] text-canopy">
-                      Last night, by hand
+                      Last night
                     </p>
+                    {bodyLoading ? (
+                      <p className="text-[0.78rem] text-canopy/70" aria-live="polite">
+                        Checking what&rsquo;s already in…
+                      </p>
+                    ) : bodyKnown ? (
+                      <p className="text-[0.78rem] leading-relaxed text-canopy">
+                        {bodyKnown.fromBand
+                          ? "Filled in from your band. Change anything that reads wrong."
+                          : "What you set down before. Change anything that reads wrong."}
+                      </p>
+                    ) : null}
                     <BodyInput id="c-sleep" label="Hours slept" unit="h" value={sleep} onChange={setSleep} placeholder="7.5" />
                     <BodyInput id="c-rhr" label="Resting heart rate" unit="bpm" value={restingHr} onChange={setRestingHr} placeholder="54" />
                     <BodyInput id="c-hrv" label="HRV" unit="ms" value={hrv} onChange={setHrv} placeholder="—" />
@@ -476,7 +582,7 @@ export default function CaptureSheet({ onClose }: { onClose: () => void }) {
                 ) : (
                   <button
                     type="button"
-                    onClick={() => setShowBody(true)}
+                    onClick={() => void openBody()}
                     className="grove-press flex min-h-[44px] items-center gap-2 text-[0.72rem] font-medium uppercase tracking-[0.14em] text-canopy hover:text-moss focus-visible:outline-none focus-visible:underline"
                   >
                     <Plus size={15} aria-hidden />
@@ -500,6 +606,15 @@ export default function CaptureSheet({ onClose }: { onClose: () => void }) {
               >
                 {saving ? "Setting it down…" : copy.submit}
               </button>
+              {/* The button IS enabled by a single dial tap — text was never
+                  required. Saying so is the fix: a control that looks disabled
+                  with no stated reason reads as "you must write prose", which
+                  is the most common reason a journaling app gets abandoned. */}
+              {!hasSomething ? (
+                <p className="mt-2 text-center text-[0.72rem] text-canopy/70">
+                  A word, a tap, anything. One is enough.
+                </p>
+              ) : null}
             </div>
           </form>
         )}

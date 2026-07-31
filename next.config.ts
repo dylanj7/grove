@@ -19,8 +19,9 @@ const nextConfig: NextConfig = {
   // costs a header, not a round-trip through the app shell.
   async redirects() {
     return [
-      // /grove and /today were the same screen wearing two hats; they're Home.
-      { source: "/grove", destination: "/home", permanent: false },
+      // /today was the letter behind a gate; it's Home. (/grove was redirected
+      // here too, until Phase 7 gave the name back to the screen it describes:
+      // the tree, the letters, and Ask now live at /grove again.)
       { source: "/today", destination: "/home", permanent: false },
       // Capture stopped being a place and became an action. ?capture=1 opens
       // the sheet on arrival (see components/capture-provider).

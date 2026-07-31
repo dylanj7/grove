@@ -4,6 +4,7 @@ import { getUserId } from "@/lib/supabase/server";
 import TabBar from "@/components/tab-bar";
 import TzCookie from "@/components/tz-cookie";
 import CaptureProvider from "@/components/capture-provider";
+import OfflineNote from "@/components/offline-note";
 
 // The app shell: every authenticated screen renders inside this.
 //
@@ -38,6 +39,7 @@ export default async function AppLayout({
                 website reloading. */}
             {children}
           </main>
+          <OfflineNote />
           <TabBar />
         </div>
       </CaptureProvider>

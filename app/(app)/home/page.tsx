@@ -1,21 +1,23 @@
 import { Suspense } from "react";
 import Link from "next/link";
 import { cookies } from "next/headers";
+import { ChevronDown } from "lucide-react";
 import { createClient, getUserId } from "@/lib/supabase/server";
-import { Screen, Eyebrow, Voice, SectionLabel, Card, Skeleton } from "@/components/ui";
-import TendRow from "@/components/tend-row";
+import { Screen, Eyebrow, Voice, SectionLabel, Skeleton } from "@/components/ui";
+import IntentionList, { type IntentionItem } from "@/components/intentions";
 import CaptureCue from "./capture-cue";
 import { currentSlotFromOffset } from "@/lib/slot";
 import { localDayFromOffset, localWeekdayLong, parseTzOffset } from "@/lib/date";
-import { loadBriefInputsCached, resolveBrief, type BriefInputs } from "@/lib/brief-read";
-import { deterministicRead, bodyFacts } from "@/lib/read";
+import {
+  carriedForUi,
+  intentionsFor,
+  loadBriefInputsCached,
+  resolveBrief,
+  type BriefInputs,
+} from "@/lib/brief-read";
+import { deterministicRead, bodyRead, type BodyRead } from "@/lib/read";
+import { DOMAIN_LABEL, type Domain } from "@/lib/goal-kind";
 import BriefRevalidator from "@/components/brief-revalidator";
-
-const ASPECT_LABEL: Record<string, string> = {
-  physical: "Body",
-  mental: "Mind",
-  work: "Work",
-};
 
 // ============================================================================
 // HOME — the front door, and the whole reason the app is worth opening.
@@ -36,6 +38,19 @@ const ASPECT_LABEL: Record<string, string> = {
 // resolves in the same tick, so you just see the letter. On a cold generation
 // you see the true read immediately and the letter fades in a few seconds
 // later. An LLM call is never again allowed to hold the first paint hostage.
+//
+// PHASE 7 changed what sits under the letter. The letter's moves used to be a
+// bulleted list you could not touch, and directly beneath them sat "Rhythms
+// today" — a second list saying almost the same thing, with a checkbox. One
+// commitment, shown twice, actionable neither time. They are ONE list now
+// (components/intentions.tsx), the loop closes, and there is finally a reason
+// to open Grove between the two captures.
+//
+// The order of this screen is deliberate and was wrong before: the letter, then
+// the intentions it asked for, then the invitation to add to it — then the
+// body, which the letter has already interpreted, and only then the vectors.
+// "Add to it" used to be the very last thing on the page, below two sections
+// with less claim on the person's attention than it had.
 // ============================================================================
 export default async function HomePage() {
   const offset = parseTzOffset((await cookies()).get("tzoff")?.value);
@@ -54,8 +69,9 @@ export default async function HomePage() {
   const uid = (await getUserId())!;
 
   // ONE parallel round-trip feeds the entire screen — the window, the previous
-  // letter, the band's connection state, and the stored brief. The Suspense'd
-  // letter below re-reads it through React's cache, so it costs nothing twice.
+  // letter, what's been done with its intentions, the band's connection state,
+  // and the stored brief. The Suspense'd letter below re-reads it through
+  // React's cache, so it costs nothing twice.
   const inputs = await loadBriefInputsCached(supabase, uid, slot, localDay);
 
   const read = deterministicRead({
@@ -65,67 +81,63 @@ export default async function HomePage() {
     patterns: inputs.patterns,
     hasCheckin: inputs.hasCheckin,
   });
-  const facts = bodyFacts(inputs.win.physical);
+  const body = bodyRead(inputs.win.physical, localDay);
+  const hasBody = body.night.length > 0 || body.today.length > 0;
+
+  // Everything the tend list knows WITHOUT the letter: what's still sitting
+  // there from the last one, and today's rhythms. This is what makes the
+  // Suspense fallback a working screen rather than a placeholder — on a cold
+  // generation you can already tend things while the letter is still being
+  // written.
+  const baseItems: IntentionItem[] = [
+    ...carriedItems(inputs),
+    ...rhythmItems(inputs),
+  ];
 
   // A letter is only worth generating once there's something to write about.
   // On an empty account the deterministic read stands alone rather than burning
   // a model call to say "nothing yet" in prettier words.
-  const worthBriefing = inputs.hasCheckin || facts.length > 0;
+  const worthBriefing = inputs.hasCheckin || hasBody;
 
   return (
     <Screen className="space-y-8">
-      <header className="flex items-baseline justify-between gap-3 pt-1">
+      <header className="pt-1">
         <Eyebrow primary={weekday} secondary={isMorning ? "Morning" : "Evening"} />
-        {inputs.hasCheckin ? (
-          <span className="text-[0.62rem] uppercase tracking-[0.14em] text-canopy/60">
-            Tended
-          </span>
-        ) : null}
       </header>
 
       {worthBriefing ? (
-        <Suspense fallback={<ReadBlock headline={read.headline} line={read.line} />}>
-          <Letter inputs={inputs} isMorning={isMorning} fallbackHeadline={read.headline} fallbackLine={read.line} />
+        <Suspense
+          fallback={
+            <LetterBlock
+              headline={read.headline}
+              line={read.line}
+              items={baseItems}
+              isMorning={isMorning}
+            />
+          }
+        >
+          <Letter
+            inputs={inputs}
+            isMorning={isMorning}
+            baseItems={baseItems}
+            fallbackHeadline={read.headline}
+            fallbackLine={read.line}
+          />
         </Suspense>
       ) : (
-        <ReadBlock headline={read.headline} line={read.line} />
+        <LetterBlock
+          headline={read.headline}
+          line={read.line}
+          items={baseItems}
+          isMorning={isMorning}
+        />
       )}
 
-      {/* The body, as observed state. Present with zero input from the user
-          when a band is connected — value before it asks for anything. */}
-      {facts.length > 0 ? (
-        <section className="space-y-3">
-          <SectionLabel right={isMorning ? "last night" : "today"}>Body</SectionLabel>
-          <Card className="flex flex-wrap gap-x-7 gap-y-4">
-            {facts.map((f) => (
-              <div key={f.label} className="min-w-[4.5rem]">
-                <p className="text-[0.6rem] uppercase tracking-[0.14em] text-canopy">
-                  {f.label}
-                </p>
-                <p className="mt-1 text-[1.15rem] font-medium text-pine">{f.value}</p>
-              </div>
-            ))}
-          </Card>
-        </section>
-      ) : null}
+      {/* An invitation, never a wall — and now directly under the thing it
+          continues, rather than stranded at the foot of the page. */}
+      <CaptureCue tended={inputs.hasCheckin} isMorning={isMorning} />
 
-      {/* Today's rhythms — tappable in place, no navigation, no server wait. */}
-      {inputs.tend.habits.length > 0 ? (
-        <section className="space-y-3">
-          <SectionLabel>Rhythms today</SectionLabel>
-          <ul className="-mx-2">
-            {inputs.tend.habits.map((h) => (
-              <TendRow
-                key={h.id}
-                id={h.id}
-                title={h.title}
-                aspect={h.aspect}
-                recentDays={h.recentDays}
-              />
-            ))}
-          </ul>
-        </section>
-      ) : null}
+      {hasBody ? <BodyCard body={body} isMorning={isMorning} /> : null}
 
       {inputs.tend.goals.length > 0 ? (
         <section className="space-y-3">
@@ -139,7 +151,7 @@ export default async function HomePage() {
                 >
                   <span className="text-[1.02rem] text-pine">{g.title}</span>
                   <span className="text-[0.62rem] uppercase tracking-[0.14em] text-canopy/80">
-                    {ASPECT_LABEL[g.aspect] ?? g.aspect}
+                    {DOMAIN_LABEL[g.aspect as Domain] ?? g.aspect}
                   </span>
                 </Link>
               </li>
@@ -148,9 +160,6 @@ export default async function HomePage() {
         </section>
       ) : null}
 
-      {/* An invitation, never a wall — the screen above already gave value. */}
-      <CaptureCue tended={inputs.hasCheckin} isMorning={isMorning} />
-
       {/* Post-paint only: sync the band and refresh if the letter actually
           changed. Never blocks first paint. */}
       <BriefRevalidator slot={slot} headline={read.headline} />
@@ -158,14 +167,73 @@ export default async function HomePage() {
   );
 }
 
-// The honest read: what Grove can say with certainty, instantly. Doubles as the
-// Suspense fallback for the letter, so the two never disagree in shape.
-function ReadBlock({ headline, line }: { headline: string; line: string }) {
+// ---- The tend list's two non-letter sources ----------------------------------
+
+// Still open from the letter before this one. Named as such rather than
+// silently dropped: an app that quietly forgets what it asked you for is
+// teaching you that it didn't mean it.
+function carriedItems(inputs: BriefInputs): IntentionItem[] {
+  const prev = inputs.prevLetter;
+  if (!prev) return [];
+  return carriedForUi(inputs).map((i) => ({
+    kind: "move" as const,
+    id: `carried-${i.key}`,
+    day: prev.day,
+    slot: prev.slot,
+    moveKey: i.key,
+    aspect: i.aspect,
+    text: i.text,
+    state: i.state,
+    carried: true,
+  }));
+}
+
+function rhythmItems(inputs: BriefInputs): IntentionItem[] {
+  return inputs.tend.habits.map((h) => ({
+    kind: "rhythm" as const,
+    id: `rhythm-${h.id}`,
+    goalId: h.id,
+    aspect: h.aspect,
+    text: h.title,
+    done: h.recentDays.includes(inputs.localDay),
+  }));
+}
+
+// ---- The letter --------------------------------------------------------------
+
+// The honest read plus whatever can already be tended. Doubles as the Suspense
+// fallback for the letter, so the two never disagree in shape — and stays
+// useful on its own, because the rhythms and the carried-forward intentions
+// don't need a model to be actionable.
+function LetterBlock({
+  headline,
+  line,
+  body,
+  items,
+  isMorning,
+}: {
+  headline: string;
+  line: string;
+  body?: string;
+  items: IntentionItem[];
+  isMorning: boolean;
+}) {
   return (
-    <article className="space-y-3">
-      <Voice className="text-[1.5rem] leading-[1.28]">{headline}</Voice>
-      {line ? (
-        <p className="text-[1rem] leading-relaxed text-canopy">{line}</p>
+    <article className="space-y-6">
+      <div className="space-y-3">
+        <Voice className="text-[1.5rem] leading-[1.28]">{headline}</Voice>
+        {body ? (
+          <Voice className="text-[1.05rem] leading-[1.65] text-pine">{body}</Voice>
+        ) : line ? (
+          <p className="text-[1rem] leading-relaxed text-canopy">{line}</p>
+        ) : null}
+      </div>
+
+      {items.length > 0 ? (
+        <div className="space-y-3 border-t border-sage/70 pt-5">
+          <SectionLabel>{isMorning ? "What to tend" : "What it came to"}</SectionLabel>
+          <IntentionList items={items} />
+        </div>
       ) : null}
     </article>
   );
@@ -173,15 +241,18 @@ function ReadBlock({ headline, line }: { headline: string; line: string }) {
 
 // The model's letter. Rendered inside Suspense, so a cold generation streams in
 // after the shell rather than delaying it. A failure degrades to the same
-// deterministic read the fallback showed — the screen never goes empty.
+// deterministic read the fallback showed — the screen never goes empty, and the
+// tend list survives either way.
 async function Letter({
   inputs,
   isMorning,
+  baseItems,
   fallbackHeadline,
   fallbackLine,
 }: {
   inputs: BriefInputs;
   isMorning: boolean;
+  baseItems: IntentionItem[];
   fallbackHeadline: string;
   fallbackLine: string;
 }) {
@@ -195,37 +266,151 @@ async function Letter({
     console.error("home letter resolve failed:", err);
   }
 
-  if (!brief) return <ReadBlock headline={fallbackHeadline} line={fallbackLine} />;
+  if (!brief) {
+    return (
+      <LetterBlock
+        headline={fallbackHeadline}
+        line={fallbackLine}
+        items={baseItems}
+        isMorning={isMorning}
+      />
+    );
+  }
+
+  // Today's asks first, then what's still sitting there, then the rhythms.
+  const todays = intentionsFor(inputs, brief.moves).map((i) => ({
+    kind: "move" as const,
+    id: `move-${i.key}`,
+    day: inputs.day,
+    slot: inputs.slot,
+    moveKey: i.key,
+    aspect: i.aspect,
+    text: i.text,
+    state: i.state,
+  }));
+
+  // A move re-issued from yesterday is one intention, not two rows saying the
+  // same sentence with different badges. Today's copy wins.
+  const todaysKeys = new Set(todays.map((i) => i.moveKey));
+  const rest = baseItems.filter((i) => {
+    if (i.kind !== "move") return true;
+    return !todaysKeys.has(i.moveKey);
+  });
 
   return (
-    <article className="grove-fade space-y-6">
-      <Voice className="text-[1.5rem] leading-[1.28]">{brief.headline}</Voice>
-      <Voice className="text-[1.05rem] leading-[1.65] text-pine">{brief.body}</Voice>
+    <div className="grove-fade">
+      <LetterBlock
+        headline={brief.headline}
+        line=""
+        body={brief.body}
+        items={[...todays, ...rest]}
+        isMorning={isMorning}
+      />
+    </div>
+  );
+}
 
-      {brief.moves.length > 0 && (
-        <div className="space-y-4 border-t border-sage/70 pt-5">
-          <SectionLabel>{isMorning ? "What to tend" : "What it came to"}</SectionLabel>
-          <ul className="space-y-4">
-            {brief.moves.map((m, i) => (
-              <li key={i} className="flex gap-3">
-                <span
-                  aria-hidden
-                  className="mt-[0.6rem] h-1.5 w-1.5 shrink-0 rounded-full bg-ember"
-                />
-                <div className="space-y-0.5">
-                  <span className="text-[0.6rem] font-medium uppercase tracking-[0.16em] text-canopy">
-                    {ASPECT_LABEL[m.aspect] ?? m.aspect}
-                  </span>
-                  <p className="font-voice text-[1.05rem] leading-snug text-soil">
-                    {m.text}
-                  </p>
-                </div>
-              </li>
-            ))}
-          </ul>
-        </div>
-      )}
-    </article>
+// ---- The body ----------------------------------------------------------------
+
+const WEEKDAY = new Intl.DateTimeFormat("en-US", { weekday: "long", timeZone: "UTC" });
+
+function readingAge(body: BodyRead): string | null {
+  if (!body.nightDay || body.nightAgeDays == null) return null;
+  if (body.nightAgeDays <= 1) return null;
+  const when =
+    body.nightAgeDays < 7
+      ? WEEKDAY.format(new Date(`${body.nightDay}T00:00:00Z`))
+      : new Date(`${body.nightDay}T00:00:00Z`).toLocaleDateString("en-US", {
+          month: "long",
+          day: "numeric",
+          timeZone: "UTC",
+        });
+  return `Last read ${when}. These numbers are from then.`;
+}
+
+/**
+ * The body, collapsed.
+ *
+ * It used to be five inert numbers on a card — 7h 24m / 95% / 53 / 73ms / 876 —
+ * with no meaning attached and no way to tell whether they were from last night
+ * or from Monday. Two things changed. The card is SHUT by default, because the
+ * letter above it has already interpreted these numbers and a stat grid
+ * restates them in the one register Grove doesn't speak. And the reading now
+ * carries its own age, loudly, when it's old: Home presenting four-day-old
+ * numbers as last night's — while the letter reasoned off them — is the fastest
+ * way to lose a person's trust in everything else the screen says.
+ *
+ * A native <details>, so the affordance costs no client JavaScript and the
+ * disclosure is keyboard- and screen-reader-correct for free.
+ */
+function BodyCard({ body, isMorning }: { body: BodyRead; isMorning: boolean }) {
+  const age = readingAge(body);
+
+  return (
+    <section className="space-y-3">
+      <SectionLabel right={body.stale ? undefined : isMorning ? "last night" : "today"}>
+        Body
+      </SectionLabel>
+      {/* Not <Card>: Card owns its own padding, and the disclosure needs its
+          summary to be the full tap target edge to edge. Same surface, stated
+          directly rather than fought with an override. */}
+      <div className="overflow-hidden rounded-2xl border border-sage/70 bg-dawn shadow-soft">
+        <details className="group">
+          <summary className="grove-press-soft flex cursor-pointer list-none items-center gap-3 rounded-2xl px-5 py-4 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-moss/40 [&::-webkit-details-marker]:hidden">
+            <span className="min-w-0 flex-1">
+              <span className="block text-[0.95rem] leading-snug text-pine">
+                {body.summary}
+              </span>
+              <span className="mt-0.5 block text-[0.76rem] leading-snug text-canopy">
+                {age ?? "Tap for the numbers."}
+              </span>
+            </span>
+            <ChevronDown
+              size={17}
+              aria-hidden
+              className="shrink-0 text-canopy transition-transform duration-200 group-open:rotate-180"
+            />
+          </summary>
+
+          <div className="space-y-5 border-t border-sage/70 px-5 py-4">
+            {body.night.length > 0 ? (
+              <FactGroup
+                label={age ? "The night measured" : "Last night"}
+                facts={body.night}
+              />
+            ) : null}
+            {body.today.length > 0 ? <FactGroup label="Today" facts={body.today} /> : null}
+          </div>
+        </details>
+      </div>
+    </section>
+  );
+}
+
+function FactGroup({
+  label,
+  facts,
+}: {
+  label: string;
+  facts: { label: string; value: string; usual?: string }[];
+}) {
+  return (
+    <div className="space-y-3">
+      <p className="text-[0.6rem] uppercase tracking-[0.14em] text-canopy/70">{label}</p>
+      <div className="flex flex-wrap gap-x-7 gap-y-4">
+        {facts.map((f) => (
+          <div key={f.label} className="min-w-[4.5rem]">
+            <p className="text-[0.6rem] uppercase tracking-[0.14em] text-canopy">{f.label}</p>
+            <p className="mt-1 text-[1.15rem] font-medium text-pine">{f.value}</p>
+            {/* Their own usual, as a reference — the same job the chart's dashed
+                line does. Never a delta, never a sign, never a verdict. */}
+            {f.usual ? (
+              <p className="mt-0.5 text-[0.66rem] text-canopy/80">usually {f.usual}</p>
+            ) : null}
+          </div>
+        ))}
+      </div>
+    </div>
   );
 }
 

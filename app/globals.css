@@ -366,6 +366,22 @@ textarea,
   animation: grove-sway 12s ease-in-out infinite;
 }
 
+/* THE ONE MOMENT THAT EARNS AN ANIMATION.
+   Everything else in Grove arrives once, quietly, in 190ms — because motion
+   that runs on every navigation is what "choppy" meant (see .grove-enter). The
+   exception is a leaf landing when an intention is tended: that is the single
+   point where the metaphor and the mechanic touch, and it happens only on a
+   deliberate tap, never on a render. It rises, settles, and is gone. */
+@keyframes grove-leaf-land {
+  0% { opacity: 0; transform: translate(-2px, -7px) rotate(-24deg) scale(0.7); }
+  35% { opacity: 1; transform: translate(1px, 0) rotate(6deg) scale(1); }
+  70% { opacity: 1; transform: translate(1px, 1px) rotate(0deg) scale(1); }
+  100% { opacity: 0; transform: translate(1px, 3px) rotate(0deg) scale(0.96); }
+}
+.grove-leaf-land {
+  animation: grove-leaf-land 900ms cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
 /* Accessibility floor: no ambient motion, no entrance rise, no press dip. */
 @media (prefers-reduced-motion: reduce) {
   .grove-rise,
@@ -377,6 +393,7 @@ textarea,
   .grove-scrim,
   .grove-sheet,
   .grove-fade,
+  .grove-leaf-land,
   .grove-skeleton {
     animation: none !important;
   }
