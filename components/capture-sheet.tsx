@@ -15,8 +15,20 @@ import {
   type DictationHandle,
 } from "@/lib/dictation";
 import { localDayISO } from "@/lib/date";
-import { currentSlot, type Slot } from "@/lib/slot";
+import {
+  currentSlot,
+  eveningCutoff,
+  parseDayStart,
+  DAY_START_COOKIE,
+  type Slot,
+} from "@/lib/slot";
 import { capture } from "@/app/(app)/capture/actions";
+
+/** One cookie, by name, on the client. Same read TzCookie does. */
+function readCookie(name: string): string | null {
+  const match = document.cookie.match(new RegExp(`(?:^|; )${name}=([^;]*)`));
+  return match ? decodeURIComponent(match[1]) : null;
+}
 
 // ============================================================================
 // CAPTURE — one gesture, ten seconds, and Grove answers.
@@ -189,7 +201,13 @@ function BodyInput({
 export default function CaptureSheet({ onClose }: { onClose: () => void }) {
   const router = useRouter();
   const [day] = useState(localDayISO);
-  const [slot] = useState<Slot>(() => currentSlot());
+  // The same cutoff Home used to pick which letter to show. Read from the
+  // cookie rather than recomputed from a default, or a person whose day starts
+  // at ten would read an evening letter and then file the capture under
+  // "morning" — two halves of one screen disagreeing about what time it is.
+  const [slot] = useState<Slot>(() =>
+    currentSlot(new Date(), eveningCutoff(parseDayStart(readCookie(DAY_START_COOKIE)))),
+  );
   const copy = COPY[slot];
 
   const [view, setView] = useState<View>("form");

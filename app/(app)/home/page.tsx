@@ -6,7 +6,12 @@ import { createClient, getUserId } from "@/lib/supabase/server";
 import { Screen, Eyebrow, Voice, SectionLabel, Skeleton } from "@/components/ui";
 import IntentionList, { type IntentionItem } from "@/components/intentions";
 import CaptureCue from "./capture-cue";
-import { currentSlotFromOffset } from "@/lib/slot";
+import {
+  currentSlotFromOffset,
+  eveningCutoff,
+  parseDayStart,
+  DAY_START_COOKIE,
+} from "@/lib/slot";
 import { localDayFromOffset, localWeekdayLong, parseTzOffset } from "@/lib/date";
 import {
   carriedForUi,
@@ -18,6 +23,7 @@ import {
 import { deterministicRead, bodyRead, type BodyRead } from "@/lib/read";
 import { DOMAIN_LABEL, type Domain } from "@/lib/goal-kind";
 import BriefRevalidator from "@/components/brief-revalidator";
+import HomeGrove, { HomeGroveSkeleton } from "@/components/home-grove";
 
 // ============================================================================
 // HOME — the front door, and the whole reason the app is worth opening.
@@ -53,7 +59,8 @@ import BriefRevalidator from "@/components/brief-revalidator";
 // with less claim on the person's attention than it had.
 // ============================================================================
 export default async function HomePage() {
-  const offset = parseTzOffset((await cookies()).get("tzoff")?.value);
+  const jar = await cookies();
+  const offset = parseTzOffset(jar.get("tzoff")?.value);
 
   // No offset yet (first-ever load, before the cookie is set): a layout-stable
   // skeleton. TzCookie sets the cookie and refreshes. We NEVER guess with
@@ -61,7 +68,10 @@ export default async function HomePage() {
   if (offset === null) return <HomeSkeleton />;
 
   const weekday = localWeekdayLong(offset);
-  const slot = currentSlotFromOffset(offset);
+  // When the morning hands over to the evening, from the person's own answer in
+  // setup. Absent (every account before Phase 8) → the 5pm default, unchanged.
+  const cutoff = eveningCutoff(parseDayStart(jar.get(DAY_START_COOKIE)?.value));
+  const slot = currentSlotFromOffset(offset, cutoff);
   const localDay = localDayFromOffset(offset);
   const isMorning = slot === "morning";
 
@@ -97,7 +107,25 @@ export default async function HomePage() {
   // A letter is only worth generating once there's something to write about.
   // On an empty account the deterministic read stands alone rather than burning
   // a model call to say "nothing yet" in prettier words.
-  const worthBriefing = inputs.hasCheckin || hasBody;
+  //
+  // PHASE 8 added the third clause, and it is the whole cold-start fix. Setup
+  // asks what you're moving toward and what's been sitting untended, and those
+  // answers ARE something to write about — so a day-one letter exists before
+  // any capture, any band reading, any pattern. Without this, a new account's
+  // first screen was the deterministic read alone, which is honest but is not a
+  // reason to come back on day two.
+  const worthBriefing = inputs.hasCheckin || hasBody || inputs.win.goals.length > 0;
+
+  // How much record there actually is. Used only to caveat the letter honestly
+  // on the first day or two — never displayed as a number, never compared to
+  // anything. A letter written off one morning is a real letter and a thin one,
+  // and saying which is the difference between setting an expectation and
+  // over-promising on the screen where trust is cheapest to lose.
+  const recordedDays = new Set([
+    ...inputs.win.checkins.map((c) => c.day),
+    ...inputs.win.physical.map((p) => p.day),
+  ]).size;
+  const firstRead = recordedDays <= 1;
 
   return (
     <Screen className="space-y-8">
@@ -113,6 +141,7 @@ export default async function HomePage() {
               line={read.line}
               items={baseItems}
               isMorning={isMorning}
+              firstRead={firstRead}
             />
           }
         >
@@ -122,6 +151,7 @@ export default async function HomePage() {
             baseItems={baseItems}
             fallbackHeadline={read.headline}
             fallbackLine={read.line}
+            firstRead={firstRead}
           />
         </Suspense>
       ) : (
@@ -130,12 +160,21 @@ export default async function HomePage() {
           line={read.line}
           items={baseItems}
           isMorning={isMorning}
+          firstRead={firstRead}
         />
       )}
 
       {/* An invitation, never a wall — and now directly under the thing it
           continues, rather than stranded at the foot of the page. */}
       <CaptureCue tended={inputs.hasCheckin} isMorning={isMorning} />
+
+      {/* The whole record, small, under the day's work — and behind its own
+          boundary, because it reads the entire history rather than the
+          fourteen-day window and nothing that slow is allowed on the first
+          paint. */}
+      <Suspense fallback={<HomeGroveSkeleton />}>
+        <HomeGrove localDay={localDay} />
+      </Suspense>
 
       {hasBody ? <BodyCard body={body} isMorning={isMorning} /> : null}
 
@@ -211,12 +250,14 @@ function LetterBlock({
   body,
   items,
   isMorning,
+  firstRead = false,
 }: {
   headline: string;
   line: string;
   body?: string;
   items: IntentionItem[];
   isMorning: boolean;
+  firstRead?: boolean;
 }) {
   return (
     <article className="space-y-6">
@@ -226,6 +267,17 @@ function LetterBlock({
           <Voice className="text-[1.05rem] leading-[1.65] text-pine">{body}</Voice>
         ) : line ? (
           <p className="text-[1rem] leading-relaxed text-canopy">{line}</p>
+        ) : null}
+        {/* The caveat is rendered by the SCREEN, not asked of the model.
+            Whether a record is one day old is a fact deterministic code knows
+            exactly, and a letter told to mention its own thinness would
+            sometimes forget and sometimes over-apologise. This says it once,
+            quietly, and stops saying it the moment it stops being true. */}
+        {firstRead ? (
+          <p className="text-[0.8rem] leading-relaxed text-canopy/85">
+            This is a first read. It gets sharper once Grove has seen a week of
+            you.
+          </p>
         ) : null}
       </div>
 
@@ -249,12 +301,14 @@ async function Letter({
   baseItems,
   fallbackHeadline,
   fallbackLine,
+  firstRead,
 }: {
   inputs: BriefInputs;
   isMorning: boolean;
   baseItems: IntentionItem[];
   fallbackHeadline: string;
   fallbackLine: string;
+  firstRead: boolean;
 }) {
   const supabase = await createClient();
   const uid = (await getUserId())!;
@@ -273,6 +327,7 @@ async function Letter({
         line={fallbackLine}
         items={baseItems}
         isMorning={isMorning}
+        firstRead={firstRead}
       />
     );
   }
@@ -305,6 +360,7 @@ async function Letter({
         body={brief.body}
         items={[...todays, ...rest]}
         isMorning={isMorning}
+        firstRead={firstRead}
       />
     </div>
   );

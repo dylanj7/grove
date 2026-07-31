@@ -26,9 +26,16 @@ export default function manifest(): MetadataRoute.Manifest {
         url: "/rhythm",
       },
     ],
+    // The SVG is the sharp one and browsers that take it should. The PNGs are
+    // not redundancy: Android's install prompt requires a raster icon of at
+    // least 192px before it will offer "Add to Home Screen" at all, and a push
+    // notification's icon (public/sw.js) cannot be an SVG in Chrome. An
+    // SVG-only manifest is an app that quietly can't be installed.
     icons: [
       { src: "/icon.svg", sizes: "any", type: "image/svg+xml", purpose: "any" },
-      { src: "/icon.svg", sizes: "any", type: "image/svg+xml", purpose: "maskable" },
+      { src: "/icon-192.png", sizes: "192x192", type: "image/png", purpose: "any" },
+      { src: "/icon-512.png", sizes: "512x512", type: "image/png", purpose: "any" },
+      { src: "/icon-512.png", sizes: "512x512", type: "image/png", purpose: "maskable" },
     ],
   };
 }

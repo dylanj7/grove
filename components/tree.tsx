@@ -102,12 +102,30 @@ function buildSkeleton(weeks: number): { segments: Segment[]; tips: Tip[] } {
   return { segments, tips };
 }
 
+/**
+ * THE TREE AS NAVIGATION.
+ *
+ * A leaf is a day, and a day usually has a letter — so the canopy is already an
+ * index of the archive, and it took until Phase 8 to say so. Pass `linkFor` and
+ * each leaf whose day resolves to a target becomes a real anchor: no client
+ * JavaScript, no hit-testing, keyboard reachable, and the whole thing still
+ * server-renders as one SVG.
+ *
+ * Leaves with no target stay bare ellipses rather than becoming dead links. A
+ * day you set something down but Grove never wrote about is a real state
+ * (letters need a slot to have happened), and an anchor that goes nowhere is
+ * worse than no anchor.
+ */
 export function Tree({
   shape,
   className = "",
+  linkFor,
+  labelFor,
 }: {
   shape: GroveShape;
   className?: string;
+  linkFor?: (day: string) => string | null;
+  labelFor?: (day: string) => string;
 }) {
   const { weeks, leaves } = shape;
   const { segments, tips } = buildSkeleton(Math.max(weeks, 1));
@@ -177,9 +195,8 @@ export function Tree({
             const fill =
               jitter(leaf.day, 5) > 0.1 ? "var(--color-canopy)" : "var(--color-moss)";
 
-            return (
+            const ellipse = (
               <ellipse
-                key={leaf.day}
                 cx={x}
                 cy={y}
                 rx={LEAF_RX}
@@ -187,6 +204,26 @@ export function Tree({
                 fill={fill}
                 transform={`rotate(${tilt} ${x} ${y})`}
               />
+            );
+
+            const href = linkFor?.(leaf.day) ?? null;
+            if (!href) return <g key={leaf.day}>{ellipse}</g>;
+
+            return (
+              <a
+                key={leaf.day}
+                href={href}
+                className="grove-leaf-link"
+                aria-label={labelFor?.(leaf.day) ?? leaf.day}
+              >
+                {/* A transparent disc behind the leaf, sized to the 44px touch
+                    minimum at the scales this is drawn at. Without it the tap
+                    target is a 16×10 ellipse, which is a target only a mouse
+                    can hit — and the leaf is the one thing on this drawing a
+                    person will instinctively reach for. */}
+                <circle cx={x} cy={y} r={11} fill="transparent" />
+                {ellipse}
+              </a>
             );
           })}
         </g>

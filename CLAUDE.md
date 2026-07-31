@@ -17,14 +17,15 @@ Four destinations and one action:
 
 | | |
 |---|---|
-| **`/home`** | The read, the body, today's rhythms, an invitation to capture. |
-| **`/rhythm`** | Fourteen days of body + mind, the verified patterns, the letters. |
-| **`/goals`** | Rhythms (habits) and vectors (goals). |
-| **`/you`** | Appearance, band, account. |
+| **`/home`** | The letter, the intentions it asked for, the invitation to capture, the compact grove, the body, the vectors. |
+| **`/grove`** | The whole record: the tree, Ask Grove, the letters archive by week. |
+| **`/rhythm`** | Fourteen days of body + mind as data, plus the verified patterns. |
+| **`/you`** | Appearance, notifications, band, account. Rhythms/vectors are *managed* at `/goals`, reached from here. |
 | **Capture** | A **sheet**, not a route — `components/capture-sheet.tsx`, opened from the tab bar's center button or `?capture=1`. |
+| **`/welcome`** | Setup. Outside the `(app)` group, so no tab bar. Reached only from the root redirect. |
 
-Old paths (`/grove`, `/today`, `/checkin`, `/body`, `/evening`, `/history`) are
-redirected in `next.config.ts`, answered before any React renders.
+Old paths (`/today`, `/checkin`, `/body`, `/evening`, `/history`) are redirected
+in `next.config.ts`, answered before any React renders.
 
 # Three things that are easy to break
 
@@ -50,9 +51,9 @@ four queries to confirm state the client already had.
 
 # The tree (and the one rule it exists to obey)
 
-`lib/grove-tree.ts` + `components/tree.tsx`, shown at the top of `/rhythm`. It is
-the only view of the **whole** record — everything else in the app is a 14-day
-window.
+`lib/grove-tree.ts` + `components/tree.tsx`, full width at the top of `/grove`
+and compact on `/home`. It is the only view of the **whole** record —
+everything else in the app is a 14-day window.
 
 The brief was "track but not measure", which is harder than it sounds: a tree
 that fills up as you show up is a streak wearing bark. Three properties resolve
@@ -216,3 +217,91 @@ dataType/response shapes may still shift. The best-known strings live in
 mapping degrades to absent rather than throwing, and the seam absorbs GA changes
 so the body pillar never needs a rewrite. Run `scripts/phase5.sql` once before
 the new code touches the database.
+
+# Notifications (Phase 8 — nudges that fire on signal)
+
+`lib/nudges.ts` is the honesty layer's third part, and it is the same kind of
+code as `patterns.ts`: pure, deterministic, no model, no clock read, no
+database. Given a window it returns ranked candidates; `app/api/nudges/run`
+decides whether any of them clears the ceiling and sends it over Web Push
+(`lib/push.ts`, `public/sw.js`).
+
+**The schedule is not the trigger, and that is the whole design.** Every gate
+that matters — `WEEKLY_CAP` (3), `COOLDOWN_DAYS` (4), `MIN_GAP_HOURS` (20),
+`isCivilHour` (9–21 *on the device*) — lives in `lib/nudges.ts`, so the route is
+safe to run hourly, daily, or twice by accident and behaves identically. A
+promise that depends on a crontab entry is a configuration, not a promise.
+`vercel.json` runs it daily at 16:00 UTC only because Vercel's Hobby plan
+permits nothing faster; see `scripts/nudges-cron.md`, including which timezones
+that costs.
+
+Three detectors, and the copy rules are as load-bearing as the thresholds: a
+nudge names a fact and offers a door, never a verdict. `rhythm_quiet` offers to
+**let go** as readily as to keep — the sentence nothing else in the category
+will send you. `energy_unspent` stops at "Grove noticed"; one clause further and
+it is telling someone they wasted two good days, which is a grade.
+
+`public/sw.js` **has no `fetch` handler on purpose.** Grove's screens are Server
+Components rendered from a 14-day window, so a cached shell would serve
+yesterday's letter and yesterday's body as though they were today's — a machine
+for confidently saying something false. Offline is named out loud instead
+(`components/offline-note.tsx`).
+
+Two proxy exclusions are load-bearing: `sw.js` and `manifest.webmanifest` are
+fetched by the *browser*, not the app, and were being 307'd to `/login`. A
+service worker that redirects cannot be registered at all; a manifest that
+redirects means Grove can't be installed — and on iOS un-installable means Web
+Push is unavailable entirely. `/api/nudges/run` is public for the same class of
+reason (Vercel Cron sends no cookies) and authenticates itself with
+`CRON_SECRET`, returning 401 to everyone when that is unset.
+
+# The cold start (Phase 8 — `/welcome`)
+
+Day one had no data, so no letter, so no reason to come back on day two. Four
+questions, each of which does two jobs: they plant a vector and a rhythm *and*
+give the day-one letter something to be about. `worthBriefing` on Home now
+includes `goals.length > 0`, which is the actual fix — a letter exists before
+any capture.
+
+Every answer is skippable and every answer does something. Both halves are
+required: a setup wall would reinstate the gate Home spent Phase 6 removing, and
+a question whose answer is discarded is the app pretending to listen on the
+first screen where it asks for anything. "When does your day actually start?"
+moves the morning/evening cutoff (`eveningCutoff` in `lib/slot.ts`, carried on a
+`daystart` cookie beside `tzoff`).
+
+Setup ends by **opening the capture sheet**, not by congratulating anyone.
+
+**The onboarding gate lives in `app/page.tsx` and nowhere else.** Every sign-in
+lands on `/`, so a new account passes through exactly once. Putting it in
+`app/(app)/layout.tsx` would add a profile read to every navigation forever to
+answer a question that changes once per account; a cookie carries it afterwards.
+
+`components/tree-preview.tsx` renders Day 1 / Day 7 / Day 30 as **real trees** —
+`buildGrove()` over synthetic days through the same `<Tree>` the app uses. A
+flattering hand-drawn "day 30" would be the app's first statement about itself
+being a small lie.
+
+# The tree, promoted (Phase 8 — §3.8)
+
+Compact on Home (`components/home-grove.tsx`), behind its own Suspense boundary
+because it reads the *whole* record rather than the 14-day window and nothing
+that slow may sit on the first paint.
+
+**Coming back after a gap gets a warm line, and for Grove it is also literally
+true**: the trunk grows from weeks elapsed, so the tree really did keep growing
+while nobody was looking. That is why `buildGrove` anchors the trunk to today
+rather than to the last capture.
+
+On `/grove`, leaves are now **anchors into the letters archive** — `Tree` takes
+`linkFor(day)`, and a leaf whose day has no letter on the page stays a bare
+ellipse rather than becoming a dead link. Each anchor carries a transparent
+44px disc, because the leaf itself is a 16×10 target only a mouse can hit.
+
+# Desktop (§5.7)
+
+Mobile-only is the intent, but the deploy is a URL and every first share opens
+on a laptop. From `md` up the column is framed against a softer ground and the
+tab bar is pinned to it — a full-width nav bar on a 27-inch display is the
+clearest possible tell that you are looking at a website in a costume. Below
+`md` nothing changes.

@@ -28,7 +28,16 @@ export const metadata: Metadata = {
     statusBarStyle: "black-translucent",
     title: "Grove",
   },
-  icons: { icon: "/icon.svg", apple: "/icon.svg" },
+  // iOS ignores the manifest's icons for the Home Screen and reads
+  // apple-touch-icon instead — and it composites transparency onto BLACK, so
+  // this one is a flattened, square-cornered PNG (iOS applies its own mask).
+  icons: {
+    icon: [
+      { url: "/icon.svg", type: "image/svg+xml" },
+      { url: "/icon-192.png", sizes: "192x192", type: "image/png" },
+    ],
+    apple: "/apple-touch-icon.png",
+  },
 };
 
 export const viewport: Viewport = {

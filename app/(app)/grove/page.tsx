@@ -89,7 +89,23 @@ export default async function GrovePage() {
   ];
 
   const grove = buildGrove(treeDays, localDay);
-  const weeks = groupByWeek((briefs ?? []) as Letter[], localDay);
+  const letters = (briefs ?? []) as Letter[];
+  const weeks = groupByWeek(letters, localDay);
+
+  // THE TREE BECOMES NAVIGATION (§3.8). A leaf is a day; most days have a
+  // letter; so the canopy is already an index of the archive below it and only
+  // needed saying so. The anchor is the day's FIRST letter in the query's own
+  // order (day desc, created_at desc) — object identity, so the anchor survives
+  // grouping without re-deriving which row won.
+  const anchor = new Map<string, Letter>();
+  for (const l of letters) if (!anchor.has(l.day)) anchor.set(l.day, l);
+
+  // Only days that are actually on this page get a link. The tree reaches back
+  // 800 days and the archive holds 60 letters, so most of a long grove's canopy
+  // correctly stays un-linked rather than pointing at an anchor that isn't
+  // there.
+  const linkFor = (day: string) => (anchor.has(day) ? `#letter-${day}` : null);
+  const labelFor = (day: string) => `${formatDay(day)} — read that day's letter`;
 
   return (
     <Screen className="space-y-10">
@@ -98,13 +114,19 @@ export default async function GrovePage() {
       </header>
 
       <section className="space-y-3">
-        <Tree shape={grove} className="mx-auto block h-[15rem] w-full max-w-[16rem]" />
+        <Tree
+          shape={grove}
+          className="mx-auto block h-[15rem] w-full max-w-[16rem]"
+          linkFor={linkFor}
+          labelFor={labelFor}
+        />
         <p className="text-center text-[0.78rem] leading-relaxed text-canopy">
           {grove.firstDay ? (
             <>
               A leaf for every day you&rsquo;ve set something down, since{" "}
               {sinceLabel(grove.firstDay)}. Where a leaf sits is how that day
               felt &mdash; not how well it went.
+              {anchor.size > 0 ? " Touch one to read that day." : null}
             </>
           ) : (
             <>
@@ -130,7 +152,14 @@ export default async function GrovePage() {
               </div>
               <ul className="space-y-5">
                 {w.letters.map((b, i) => (
-                  <li key={`${b.day}-${b.slot}-${i}`} className="space-y-1.5">
+                  <li
+                    key={`${b.day}-${b.slot}-${i}`}
+                    // The landing point for that day's leaf. scroll-mt keeps
+                    // the letter clear of the top edge when jumped to, so an
+                    // anchor lands you AT the thing rather than just above it.
+                    id={anchor.get(b.day) === b ? `letter-${b.day}` : undefined}
+                    className="scroll-mt-24 space-y-1.5"
+                  >
                     <Eyebrow primary={formatDay(b.day)} secondary={b.slot} />
                     <Voice className="text-[1.05rem] leading-snug text-pine">
                       {b.headline}

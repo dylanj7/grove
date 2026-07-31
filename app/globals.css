@@ -382,6 +382,25 @@ textarea,
   animation: grove-leaf-land 900ms cubic-bezier(0.22, 1, 0.36, 1) both;
 }
 
+/* A leaf that leads somewhere. The tree is the archive's index (each leaf is a
+   day, most days have a letter), so leaves became anchors — and an anchor has
+   to look reachable without the canopy turning into a menu. Hence: nothing at
+   rest, a small lift on hover, and a real focus ring for keyboard use. The
+   underline that a bare <a> would put through an SVG child is suppressed. */
+.grove-leaf-link {
+  cursor: pointer;
+  outline: none;
+  transition: opacity 140ms ease;
+}
+.grove-leaf-link:hover ellipse {
+  opacity: 0.78;
+}
+.grove-leaf-link:focus-visible ellipse {
+  stroke: var(--color-soil);
+  stroke-width: 1.5;
+  paint-order: stroke;
+}
+
 /* Accessibility floor: no ambient motion, no entrance rise, no press dip. */
 @media (prefers-reduced-motion: reduce) {
   .grove-rise,

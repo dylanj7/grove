@@ -77,7 +77,11 @@ export default function TabBar() {
   return (
     <nav
       aria-label="Primary"
-      className="fixed inset-x-0 bottom-0 z-30 border-t border-sage/70 bg-mist/95 pb-safe backdrop-blur-md"
+      // Full-bleed on a phone, where it IS the bottom of the screen. From md up
+      // it is pinned to the framed column instead (see app/(app)/layout.tsx),
+      // because a nav bar running the full width of a 27-inch display is the
+      // single clearest tell that you are looking at a website in a costume.
+      className="fixed inset-x-0 bottom-0 z-30 border-t border-sage/70 bg-mist/95 pb-safe backdrop-blur-md md:left-1/2 md:right-auto md:w-full md:max-w-md md:-translate-x-1/2 md:border-x md:border-sage/60"
     >
       <ul className="mx-auto flex max-w-md items-center">
         {LEFT.map((t) => (

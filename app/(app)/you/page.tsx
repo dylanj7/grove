@@ -3,8 +3,10 @@ import { ChevronRight } from "lucide-react";
 import { createClient, getSessionUser } from "@/lib/supabase/server";
 import { Screen, Eyebrow, SectionLabel, Card } from "@/components/ui";
 import ThemeToggle from "@/components/theme-toggle";
+import NotificationSetting from "@/components/notification-setting";
 import { signOut } from "@/app/auth/actions";
 import { connectionState, googleConfigured } from "@/lib/health";
+import { vapidPublicKey } from "@/lib/push";
 
 function formatDay(day: string): string {
   return new Date(`${day}T00:00:00`).toLocaleDateString("en-US", {
@@ -106,6 +108,17 @@ export default async function YouPage({
         <ThemeToggle />
       </section>
 
+      {/* The public half of the VAPID pair is read here and handed down, so the
+          client needs no NEXT_PUBLIC_ env var to subscribe — and a deployment
+          without keys renders an honest "not set up yet" rather than a button
+          that fails. */}
+      <section className="space-y-3">
+        <SectionLabel>Notifications</SectionLabel>
+        <Card>
+          <NotificationSetting vapidPublicKey={vapidPublicKey()} />
+        </Card>
+      </section>
+
       <section className="space-y-3">
         <SectionLabel>Band</SectionLabel>
         <Card className="space-y-4">
@@ -194,17 +207,6 @@ export default async function YouPage({
               <span className="truncate text-[0.95rem] text-pine">{user.email}</span>
             </div>
           ) : null}
-          <div
-            aria-disabled
-            className="flex items-center justify-between gap-4 opacity-55"
-          >
-            <span className="text-[0.7rem] uppercase tracking-[0.14em] text-canopy">
-              Notifications
-            </span>
-            <span className="text-[0.7rem] uppercase tracking-[0.12em] text-canopy">
-              Later
-            </span>
-          </div>
         </Card>
       </section>
 

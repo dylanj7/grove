@@ -51,7 +51,16 @@ export async function proxy(request: NextRequest) {
   const signedIn = Boolean(data?.claims?.sub);
 
   const { pathname } = request.nextUrl;
-  const isPublicRoute = pathname === "/login" || pathname.startsWith("/auth");
+  const isPublicRoute =
+    pathname === "/login" ||
+    pathname.startsWith("/auth") ||
+    // The nudge sender (Phase 8). Vercel Cron calls it with no session — it
+    // carries no cookies at all — so protecting it here would mean the proxy
+    // 307ing every scheduled run to /login and notifications silently never
+    // working. It is NOT unauthenticated: it checks
+    // `Authorization: Bearer $CRON_SECRET` itself and returns 401 to everyone
+    // when that variable is unset, which is the safe failure direction.
+    pathname === "/api/nudges/run";
 
   // Unauthenticated users hitting a protected route → /login
   if (!signedIn && !isPublicRoute) {
@@ -80,6 +89,16 @@ function copyCookies(from: NextResponse, to: NextResponse) {
 export const config = {
   matcher: [
     // Run on everything except Next.js internals and static asset files.
-    "/((?!_next/static|_next/image|favicon.ico|.*\\.(?:svg|png|jpg|jpeg|gif|webp|ico)$).*)",
+    //
+    // sw.js and manifest.webmanifest are excluded for a reason worth stating:
+    // both are fetched by the BROWSER ITSELF rather than by the app, and both
+    // were being 307'd to /login before this. A service worker that redirects
+    // cannot be registered at all, which quietly makes every notification in
+    // Phase 8 impossible; a manifest that redirects means the install prompt
+    // never appears, which quietly makes Grove un-installable — and on iOS,
+    // un-installable means Web Push is unavailable too. Neither discloses
+    // anything: one is a static file every visitor may read, the other
+    // describes the app's name and icons.
+    "/((?!_next/static|_next/image|favicon.ico|sw\\.js|manifest\\.webmanifest|.*\\.(?:svg|png|jpg|jpeg|gif|webp|ico)$).*)",
   ],
 };
